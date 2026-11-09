@@ -1,0 +1,1383 @@
+/**
+ * Skill Detective — browser half.
+ *
+ * Three seats, one package:
+ *
+ *  - `conversation.input.left` — the `🐟 技能侦探` switch beside the composer's
+ *    permission control. Its state is per Session and is mirrored to the host so
+ *    the host knows whether a committed user message should be analysed.
+ *  - `conversation.input.dock` — the recommendation bubble above the composer,
+ *    the five-step progress view, the "already covered" toast and the
+ *    "nothing good found" state. Nothing here enters the chat flow.
+ *  - `sidebar.panellist` + `main` — the skill manager page (grouped list,
+ *    search, filters, details, delete, disable, settings) and the marketplace
+ *    view inside it.
+ *
+ * All data comes from the host half's JSON routes; the browser never scans or
+ * writes skill files itself.
+ */
+window.__ModuleLoader__.load({
+  id: 'dsh-skill-detective',
+  factory(require) {
+    const React = require('react')
+    const h = React.createElement
+    const { useState, useEffect, useRef, useMemo, useCallback } = React
+
+    const API = '/api/dsh-skill-detective'
+    const PANEL_ID = 'skill-detective'
+    const PANEL_ORDER = 15
+    const NS = 'dsh-skill-detective'
+    /** Marketplace cards rendered per batch. */
+    const MARKET_PAGE_SIZE = 12
+
+    /* ---------------------------------------------------------------- */
+    /* Locale                                                            */
+    /* ---------------------------------------------------------------- */
+
+    const zh = {
+      nav: '技能管理',
+      panelTitle: '技能管理',
+      panelHint: '已安装',
+      market: '技能市场',
+      settings: '设置',
+      openDir: '打开目录',
+      search: '搜索技能名称…',
+      all: '全部',
+      plugin: '插件安装',
+      marketOrigin: '市场安装',
+      user: '用户自建',
+      reviewed: '已审查',
+      local: '本地',
+      disabled: '已禁用',
+      installedN: '已安装 {n} 个',
+      statPlugin: '插件安装 {n}',
+      statMarket: '市场安装 {n}',
+      statUser: '用户自建 {n}',
+      statRoot: '本地目录 .dsh/skills',
+      groupPlugin: '插件安装',
+      groupMarket: '市场安装',
+      groupUser: '用户自建',
+      emptyTitle: '还没有技能',
+      emptyHint: '在「技能市场」安装，或在对话里勾选「技能侦探」让本鱼自动找。',
+      openMarket: '去技能市场',
+      detail: '详情',
+      openFolder: '打开文件位置',
+      disable: '禁用',
+      enable: '启用',
+      del: '删除',
+      delConfirm: '删除 {name}？删除后不可恢复',
+      cancel: '取消',
+      confirmDel: '确认删除',
+      source: '来源',
+      installs: '安装量',
+      size: '体积',
+      scope: '作用域',
+      installedAt: '安装时间',
+      status: '状态',
+      perm: '最高权限',
+      fileTree: '文件结构',
+      preview: 'SKILL.md 预览',
+      scopeTemp: '临时（仅当前会话）',
+      scopeWorkspace: '工作区',
+      scopeGlobal: '全局',
+      scopeHintTemp: '只对当前会话注册，换会话即不可见',
+      scopeHintWorkspace: '只对选中的工作区生效',
+      scopeHintGlobal: '对所有工作区和会话生效',
+      settingsTitle: '技能设置',
+      defaultScope: '默认下载作用域',
+      defaultScopeHint: '新下载的技能按此处选择写入',
+      workspaceCard: '工作区',
+      workspaceHint: '只对当前工作区生效（需项目根含 .git）',
+      globalCard: '全局',
+      globalHint: '对所有工作区和会话生效',
+      scopeRows: '已安装技能的作用域',
+      scopeRowsHint: '保存后立即生效：文件位置、列表与自动匹配同时更新',
+      workspacesChips: '生效工作区',
+      save: '保存',
+      saving: '保存中…',
+      saved: '已保存',
+      noWorkspaces: '默认工作区',
+      marketTitle: '技能市场',
+      marketSource: '来源 skills.sh · 安装前自动安全审查',
+      back: '返回',
+      install: '安装',
+      installing: '安装中…',
+      auditing: '审查中…',
+      installed: '已安装',
+      marketEmpty: '没找到匹配的技能',
+      marketSearch: '搜索市场技能…',
+      loadMore: '加载更多（已显示 {shown} / {total}）',
+      allLoaded: '已全部加载（共 {n} 个）',
+      reviewPass: '审查通过',
+      deleted: '已删除 {name}',
+      toastDisabled: '已禁用 {name}',
+      toastEnabled: '已启用 {name}',
+      toastScope: '作用域已更新',
+      failTitle: '操作失败',
+      loadFail: '读取技能列表失败',
+      close: '关闭',
+      toggleOn: '技能侦探',
+      toggleHint: '勾选后，发送消息时本鱼会判断你缺什么技能',
+      bubbleAsk: '本鱼发现你好像需要「{label}」的技能，需要我帮你自动找用得最多的 skill 吗？',
+      find: '帮我找',
+      notNow: '先不用',
+      stepAnalyze: '语义分析',
+      stepSearch: '检索 skills.sh',
+      stepAudit: '安全审查',
+      stepDownload: '下载',
+      stepEnable: '装载启用',
+      progressKicker: '技能侦探 · 正在处理',
+      doneLine: '下载与检测完成 · {name} 已装载',
+      coveredLine: '已匹配已安装技能 {name}，直接使用',
+      noneLine: '本鱼没发现好用的技能呢',
+      retry: '再找一次',
+      algorithm: '按安装量排序',
+      marketInstalling: '正在安装 {name}',
+    }
+
+    const en = {
+      nav: 'Skills',
+      panelTitle: 'Skills',
+      panelHint: 'Installed',
+      market: 'Marketplace',
+      settings: 'Settings',
+      openDir: 'Open folder',
+      search: 'Search skills…',
+      all: 'All',
+      plugin: 'Plugin',
+      marketOrigin: 'Marketplace',
+      user: 'User',
+      reviewed: 'Audited',
+      local: 'Local',
+      disabled: 'Disabled',
+      installedN: '{n} installed',
+      statPlugin: 'plugin {n}',
+      statMarket: 'market {n}',
+      statUser: 'user {n}',
+      statRoot: 'local .dsh/skills',
+      groupPlugin: 'Plugin installs',
+      groupMarket: 'Marketplace installs',
+      groupUser: 'User skills',
+      emptyTitle: 'No skills yet',
+      emptyHint: 'Install one from the marketplace, or tick Skill Detective in a conversation.',
+      openMarket: 'Open marketplace',
+      detail: 'Details',
+      openFolder: 'Open file location',
+      disable: 'Disable',
+      enable: 'Enable',
+      del: 'Delete',
+      delConfirm: 'Delete {name}? This cannot be undone',
+      cancel: 'Cancel',
+      confirmDel: 'Delete',
+      source: 'Source',
+      installs: 'Installs',
+      size: 'Size',
+      scope: 'Scope',
+      installedAt: 'Installed',
+      status: 'Status',
+      perm: 'Max permission',
+      fileTree: 'Files',
+      preview: 'SKILL.md preview',
+      scopeTemp: 'Temporary (this session)',
+      scopeWorkspace: 'Workspace',
+      scopeGlobal: 'Global',
+      scopeHintTemp: 'Registered for this session only',
+      scopeHintWorkspace: 'Applies to the selected workspaces',
+      scopeHintGlobal: 'Applies to every workspace and session',
+      settingsTitle: 'Skill settings',
+      defaultScope: 'Default download scope',
+      defaultScopeHint: 'New downloads are written where this points',
+      workspaceCard: 'Workspace',
+      workspaceHint: 'Applies to this workspace (its root must contain .git)',
+      globalCard: 'Global',
+      globalHint: 'Applies to every workspace and session',
+      scopeRows: 'Installed skill scopes',
+      scopeRowsHint: 'Changes apply immediately: files, list and matching all update',
+      workspacesChips: 'Workspaces',
+      save: 'Save',
+      saving: 'Saving…',
+      saved: 'Saved',
+      noWorkspaces: 'Default workspace',
+      marketTitle: 'Marketplace',
+      marketSource: 'Source skills.sh · audited before install',
+      back: 'Back',
+      install: 'Install',
+      installing: 'Installing…',
+      auditing: 'Auditing…',
+      installed: 'Installed',
+      marketEmpty: 'No matching skill',
+      marketSearch: 'Search the marketplace…',
+      loadMore: 'Load more ({shown} / {total} shown)',
+      allLoaded: 'All loaded ({n} skills)',
+      reviewPass: 'Audit passed',
+      deleted: 'Deleted {name}',
+      toastDisabled: 'Disabled {name}',
+      toastEnabled: 'Enabled {name}',
+      toastScope: 'Scope updated',
+      failTitle: 'Operation failed',
+      loadFail: 'Failed to read the skill list',
+      close: 'Close',
+      toggleOn: 'Skill Detective',
+      toggleHint: 'When ticked, the host analyses your next message',
+      bubbleAsk: 'You seem to need a “{label}” skill. Want me to find the most-installed one for you?',
+      find: 'Find it',
+      notNow: 'Not now',
+      stepAnalyze: 'Semantic analysis',
+      stepSearch: 'Search skills.sh',
+      stepAudit: 'Audit',
+      stepDownload: 'Download',
+      stepEnable: 'Load and enable',
+      progressKicker: 'Skill Detective · working',
+      doneLine: 'Download and audit complete · {name} loaded',
+      coveredLine: 'Already covered by {name} — use it directly',
+      noneLine: 'No good skill found this time',
+      retry: 'Search again',
+      algorithm: 'sorted by installs',
+      marketInstalling: 'Installing {name}',
+    }
+
+    function interpolate(text, vars) {
+      if (!vars) return text
+      return String(text).replace(/\{(\w+)\}/g, (_, key) => (vars[key] === undefined ? `{${key}}` : String(vars[key])))
+    }
+
+    function translate(dict) {
+      return (key, vars) => interpolate(dict[key] ?? key, vars)
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Styles                                                            */
+    /* ---------------------------------------------------------------- */
+
+    const CSS = `
+.sd-root { color: #e8e8ea; font-size: 13px; line-height: 1.55; }
+.sd-page { width: 100%; height: 100%; min-height: 0; flex: 1 1 auto; box-sizing: border-box; overflow-y: auto; background: transparent; }
+.sd-page-inner { max-width: 1040px; margin: 0 auto; padding: 18px 28px 56px; }
+.sd-topbar { display: flex; align-items: center; gap: 10px; padding: 6px 0 18px; }
+.sd-back { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #8b8f98; cursor: pointer; }
+.sd-back:hover { background: rgba(255,255,255,.06); color: #e8e8ea; }
+.sd-title { font-size: 17px; font-weight: 600; letter-spacing: .2px; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+.sd-sub { color: #a9adb5; font-size: 12px; margin-left: 2px; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.sd-spacer { flex: 1; }
+.sd-toplink { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; border: none; background: transparent; color: #8b8f98; font-size: 12px; cursor: pointer; }
+.sd-toplink:hover { background: rgba(255,255,255,.06); color: #e8e8ea; }
+.sd-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #cfd2d8; font-size: 12px; padding: 7px 11px; margin: 0 0 14px; border-radius: 9px; background: rgba(8,9,12,.42); border: 1px solid rgba(255,255,255,.06); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.sd-stats b { color: #e8e8ea; font-weight: 600; }
+.sd-stats .sep { color: #3a3d44; }
+.sd-search { width: 100%; height: 34px; border-radius: 9px; background: rgba(18,19,22,.58); border: 1px solid rgba(255,255,255,.09); color: #e8e8ea; padding: 0 12px; font-size: 12.5px; outline: none; box-sizing: border-box; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.sd-search::placeholder { color: #5d6169; }
+.sd-search:focus { border-color: rgba(53,224,210,.5); }
+.sd-chips { display: flex; gap: 8px; padding: 12px 0 16px; flex-wrap: wrap; }
+.sd-chip { height: 26px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); background: rgba(8,9,12,.34); color: #cfd2d8; font-size: 12px; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.sd-chip:hover { color: #ffffff; border-color: rgba(255,255,255,.28); }
+.sd-chip.on { background: rgba(255,255,255,.16); color: #ffffff; border-color: rgba(255,255,255,.3); }
+.sd-group { padding-top: 6px; }
+.sd-group-title { color: #a9adb5; font-size: 11.5px; letter-spacing: .3px; padding: 10px 2px 8px; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
+.sd-row { display: flex; align-items: center; gap: 14px; background: rgba(20,20,23,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 14px rgba(0,0,0,.18); }
+.sd-row.off { opacity: .55; }
+.sd-icon { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 10px; border: 1.5px solid rgba(255,255,255,.82); background: transparent; display: flex; align-items: center; justify-content: center; font-size: 19px; }
+.sd-main { min-width: 0; flex: 1; }
+.sd-name-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sd-name { font-weight: 600; font-size: 13.5px; color: #e8e8ea; }
+.sd-ver { font-size: 10.5px; color: #5d6169; }
+.sd-badge { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: #1c2230; color: #7aaaff; }
+.sd-badge.grey { background: #23252a; color: #8b8f98; }
+.sd-meta { color: #8b8f98; font-size: 11.5px; margin-top: 3px; }
+.sd-subline { color: #5d6169; font-size: 11px; margin-top: 2px; }
+.sd-subline.warn { color: #c9a96a; }
+.sd-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.sd-iconbtn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: #5d6169; border-radius: 7px; cursor: pointer; padding: 0; }
+.sd-iconbtn:hover { background: rgba(255,255,255,.06); color: #e8e8ea; }
+.sd-iconbtn.danger:hover { color: #ff6b6b; background: rgba(255,107,107,.1); }
+.sd-delbar { display: flex; align-items: center; gap: 10px; background: rgba(255,80,80,.08); border: 1px solid rgba(255,80,80,.28); border-radius: 10px; padding: 10px 12px; margin: -2px 0 10px; color: #ff9a9a; font-size: 12px; }
+.sd-btn { height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.09); background: transparent; color: #cfd2d8; font-size: 12px; cursor: pointer; }
+.sd-btn:hover { background: rgba(255,255,255,.06); }
+.sd-btn.primary { border: none; background: linear-gradient(135deg, #35e0d2, #7aaaff); color: #06121a; font-weight: 600; }
+.sd-btn.danger { border-color: rgba(255,80,80,.4); color: #ff8080; }
+.sd-empty { text-align: center; padding: 64px 0; color: #5d6169; }
+.sd-empty b { display: block; color: #8b8f98; font-size: 14px; margin-bottom: 6px; }
+.sd-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.sd-modal { width: 640px; max-width: 100%; max-height: 82vh; overflow-y: auto; background: rgba(18,18,21,.9); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 20px 22px; box-shadow: 0 24px 80px rgba(0,0,0,.6); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+.sd-modal h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.sd-modal .sd-muted { color: #5d6169; font-size: 11.5px; }
+.sd-kv { display: grid; grid-template-columns: 92px 1fr; gap: 8px 12px; padding: 14px 0; border-top: 1px solid rgba(255,255,255,.055); margin-top: 12px; font-size: 12px; }
+.sd-kv dt { color: #5d6169; margin: 0; }
+.sd-kv dd { margin: 0; color: #cfd2d8; word-break: break-all; }
+.sd-h4 { font-size: 12px; color: #8b8f98; margin: 16px 0 8px; }
+.sd-tree { background: rgba(10,10,13,.55); border: 1px solid rgba(255,255,255,.07); border-radius: 9px; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11.5px; color: #8b8f98; }
+.sd-tree div { white-space: pre; }
+.sd-pre { background: rgba(10,10,13,.55); border: 1px solid rgba(255,255,255,.07); border-radius: 9px; padding: 12px; max-height: 280px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11.5px; color: #a9adb5; white-space: pre-wrap; }
+.sd-modal-foot { display: flex; gap: 8px; justify-content: flex-end; padding-top: 16px; }
+.sd-radios { display: flex; gap: 10px; }
+.sd-radio { flex: 1; text-align: left; background: rgba(12,13,16,.5); border: 1px solid rgba(255,255,255,.09); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: #cfd2d8; }
+.sd-radio.on { border-color: rgba(53,224,210,.55); background: rgba(53,224,210,.06); }
+.sd-radio b { display: block; font-size: 12.5px; margin-bottom: 2px; }
+.sd-radio span { color: #5d6169; font-size: 11px; }
+.sd-srow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.045); }
+.sd-srow .nm { flex: 1; font-size: 12.5px; }
+.sd-select { height: 28px; border-radius: 7px; background: rgba(12,13,16,.62); border: 1px solid rgba(255,255,255,.11); color: #cfd2d8; font-size: 11.5px; padding: 0 6px; }
+.sd-wschips { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0 2px 0; }
+.sd-wschip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(255,255,255,.09); background: transparent; color: #8b8f98; cursor: pointer; }
+.sd-wschip.on { background: #1c2230; color: #7aaaff; border-color: rgba(122,170,255,.3); }
+.sd-wschip.dim { opacity: .4; pointer-events: none; }
+.sd-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: rgba(24,25,29,.9); border: 1px solid rgba(255,255,255,.12); color: #e8e8ea; border-radius: 10px; padding: 9px 16px; font-size: 12px; z-index: 80; box-shadow: 0 10px 30px rgba(0,0,0,.5); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.sd-markets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.sd-market-search { margin: 0 0 14px; }
+.sd-more-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 0 12px; }
+.sd-more-done { color: #a9adb5; font-size: 12px; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
+.sd-card { background: rgba(20,20,23,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 14px rgba(0,0,0,.18); }
+.sd-card-head { display: flex; align-items: center; gap: 10px; }
+.sd-card-name { font-weight: 600; font-size: 13px; }
+.sd-card-desc { color: #8b8f98; font-size: 11.5px; min-height: 34px; }
+.sd-card-foot { display: flex; align-items: center; gap: 8px; color: #5d6169; font-size: 11px; }
+.sd-card-foot .sd-btn { margin-left: auto; }
+.sd-cat { font-size: 10px; color: #5d6169; border: 1px solid rgba(255,255,255,.08); border-radius: 4px; padding: 0 5px; }
+.sd-toggle { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,.07); background: transparent; color: #8b8f98; font-size: 11.5px; cursor: pointer; user-select: none; }
+.sd-toggle:hover { border-color: rgba(255,255,255,.14); color: #cfd2d8; }
+.sd-toggle.on { color: #35e0d2; border-color: rgba(53,224,210,.35); background: rgba(53,224,210,.07); }
+.sd-toggle .box { width: 12px; height: 12px; border-radius: 3px; border: 1px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; line-height: 1; }
+.sd-toggle .fish { font-size: 12px; filter: grayscale(1); opacity: .75; }
+.sd-toggle.on .fish { filter: none; opacity: 1; }
+.sd-dock { position: fixed; right: 148px; bottom: 132px; z-index: 9999; display: flex; justify-content: flex-end; pointer-events: none; }
+.sd-dock .sd-bubble { pointer-events: auto; }
+.sd-bubble { width: 372px; max-width: calc(100vw - 44px); background: rgba(20,20,23,.92); border: 1px solid rgba(255,255,255,.11); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,.55); padding: 12px 14px; position: relative; animation: sd-in .18s ease-out; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+@keyframes sd-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.sd-bubble:after { content: ''; position: absolute; right: 34px; bottom: -6px; width: 10px; height: 10px; background: rgba(20,20,23,.92); border-right: 1px solid rgba(255,255,255,.11); border-bottom: 1px solid rgba(255,255,255,.11); transform: rotate(45deg); }
+.sd-bubble-text { font-size: 12.5px; color: #cfd2d8; line-height: 1.6; }
+.sd-bubble-text em { font-style: normal; color: #35e0d2; }
+.sd-bubble-actions { display: flex; gap: 8px; margin-top: 10px; }
+.sd-pbtn { height: 26px; padding: 0 12px; border-radius: 7px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255,255,255,.1); background: transparent; color: #cfd2d8; }
+.sd-pbtn.main { border: none; background: linear-gradient(135deg, #35e0d2, #7aaaff); color: #06121a; font-weight: 600; }
+.sd-steps { display: flex; flex-direction: column; gap: 7px; }
+.sd-step { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: #8b8f98; }
+.sd-step .dot { width: 14px; height: 14px; flex: 0 0 14px; border-radius: 50%; border: 1px solid #3a3d44; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; margin-top: 1px; }
+.sd-step.ok .dot { border-color: rgba(53,224,210,.6); color: #35e0d2; background: rgba(53,224,210,.1); }
+.sd-step.fail .dot { border-color: rgba(255,90,90,.6); color: #ff8080; background: rgba(255,90,90,.1); }
+.sd-step.run .dot { border-color: rgba(122,170,255,.6); color: #7aaaff; }
+.sd-step .lab { color: #cfd2d8; }
+.sd-step .det { color: #5d6169; font-size: 11px; }
+.sd-step.fail .lab { color: #ff9a9a; }
+.sd-done { font-size: 12.5px; color: #35e0d2; display: flex; align-items: center; gap: 6px; }
+.sd-dim { opacity: .45; }
+@media (max-width: 980px) { .sd-markets { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+@media (max-width: 640px) { .sd-markets { grid-template-columns: 1fr; } .sd-page-inner { padding: 14px 16px 48px; } }
+`
+
+    /* ---------------------------------------------------------------- */
+    /* Icons                                                             */
+    /* ---------------------------------------------------------------- */
+
+    const svg = (children, size = 15, extra) => h('svg', {
+      width: size,
+      height: size,
+      viewBox: '0 0 16 16',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.4,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      'aria-hidden': true,
+      style: { display: 'block', ...(extra?.style ?? {}) },
+      ...extra,
+    }, children)
+
+    const iconInfo = size => svg([
+      h('circle', { key: 'c', cx: 8, cy: 8, r: 6.2 }),
+      h('path', { key: 'p', d: 'M8 7.2v3.4' }),
+      h('circle', { key: 'd', cx: 8, cy: 4.9, r: .6, fill: 'currentColor', stroke: 'none' }),
+    ], size)
+
+    const iconFolder = size => svg([
+      h('path', { key: 'p', d: 'M2.2 4.4c0-.7.6-1.2 1.2-1.2h2.4l1.2 1.5h5.6c.7 0 1.2.6 1.2 1.2v5.4c0 .7-.6 1.2-1.2 1.2H3.4c-.7 0-1.2-.6-1.2-1.2z' }),
+    ], size)
+
+    const iconMinus = size => svg([h('path', { key: 'p', d: 'M3.6 8h8.8' })], size)
+    const iconPlus = size => svg([h('path', { key: 'p', d: 'M3.6 8h8.8M8 3.6v8.8' })], size)
+
+    const iconTrash = size => svg([
+      h('path', { key: 'a', d: 'M3.2 5h9.6M6.4 5V3.6h3.2V5M4.6 5l.5 7.2h5.8L11.4 5' }),
+    ], size)
+
+    const iconGear = size => svg([
+      h('circle', { key: 'c', cx: 8, cy: 8, r: 2.2 }),
+      h('path', { key: 'p', d: 'M8 2.2v1.4M8 12.4v1.4M2.2 8h1.4M12.4 8h1.4M4 4l1 1M11 11l1 1M12 4l-1 1M5 11l-1 1' }),
+    ], size)
+
+    const iconMarket = size => svg([
+      h('path', { key: 'a', d: 'M2.6 5.6V13h10.8V5.6' }),
+      h('path', { key: 'b', d: 'M1.8 5.6 3.2 2.6h9.6l1.4 3z' }),
+      h('path', { key: 'c', d: 'M6 8.2a2 2 0 0 0 4 0' }),
+    ], size)
+
+    const iconBack = size => svg([h('path', { key: 'p', d: 'M9.6 3.2 4.8 8l4.8 4.8' })], size)
+    const iconArrow = size => svg([h('path', { key: 'p', d: 'M3 8h9M8.4 4.2 12.2 8l-3.8 3.8' })], size)
+
+    const ICONS = {
+      'word-docx': '📘',
+      'excel-report': '📊',
+      'ppt-deck': '📽️',
+      'pdf-toolkit': '📕',
+      'crawler-kit': '🕸️',
+      'web-crawler-pro': '🕷️',
+      'git-tools': '🌿',
+      'sqlite-query': '🗄️',
+      'markdown-writer': '📝',
+      'html-report': '🌐',
+      'csv-tools': '📑',
+      'json-formatter': '🧾',
+      'data-cleaner': '🧹',
+      'chart-maker': '📈',
+      'docker-helper': '🐳',
+      'api-mock': '🔌',
+      'regex-tester': '🎯',
+      'code-review': '🔍',
+      'unit-test-helper': '🧪',
+      'log-analyzer': '📜',
+      'db-migrate': '🧱',
+      'secrets-scanner': '🔐',
+      'http-client': '📡',
+      'rss-reader': '📰',
+      'sitemap-checker': '🗺️',
+      'calendar-sync': '📅',
+      'email-draft': '✉️',
+      'meeting-notes': '🗒️',
+      'translate-docs': '🌏',
+      'form-builder': '📋',
+      'image-optimizer': '🖼️',
+    }
+
+    function skillEmoji(name) {
+      return ICONS[name] ?? '🐟'
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Host bridge                                                       */
+    /* ---------------------------------------------------------------- */
+
+    async function api(route, options) {
+      const response = await fetch(`${API}${route}`, {
+        method: options?.method ?? (options?.body === undefined ? 'GET' : 'POST'),
+        headers: options?.body === undefined ? undefined : { 'content-type': 'application/json' },
+        body: options?.body === undefined ? undefined : JSON.stringify(options.body),
+        credentials: 'same-origin',
+      })
+      let payload = null
+      try {
+        payload = await response.json()
+      } catch {
+        payload = null
+      }
+      if (payload === null) throw new Error(`HTTP ${response.status}`)
+      if (payload.ok === false) {
+        const failed = Array.isArray(payload.steps)
+          ? [...payload.steps].reverse().find(step => step.status === 'fail')
+          : undefined
+        const message = typeof payload.error === 'string'
+          ? (failed?.detail ?? payload.error)
+          : (payload.error?.message ?? `HTTP ${response.status}`)
+        throw new Error(message)
+      }
+      return payload
+    }
+
+    function useToasts() {
+      const [toasts, setToasts] = useState([])
+      const push = useCallback((text, tone) => {
+        const id = Math.random().toString(36).slice(2)
+        setToasts(current => [...current, { id, text, tone }])
+        setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), 2600)
+      }, [])
+      return [toasts, push]
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Composer switch                                                   */
+    /* ---------------------------------------------------------------- */
+
+    function storageKey(sessionId) {
+      return `skill-detective:on:${sessionId ?? 'global'}`
+    }
+
+    function DetectiveToggle(props) {
+      const { sessionId, t } = props
+      const [on, setOn] = useState(false)
+
+      useEffect(() => {
+        let saved = false
+        try {
+          saved = window.localStorage.getItem(storageKey(sessionId)) === '1'
+        } catch {
+          saved = false
+        }
+        setOn(saved)
+        let alive = true
+        if (sessionId) {
+          api(`/checkbox?sessionId=${encodeURIComponent(String(sessionId))}`)
+            .then(payload => {
+              if (!alive) return
+              if (payload.known === true) {
+                setOn(payload.enabled === true)
+                try {
+                  window.localStorage.setItem(storageKey(sessionId), payload.enabled === true ? '1' : '0')
+                } catch {
+                  /* ignore */
+                }
+              } else {
+                api('/checkbox', { body: { sessionId, enabled: saved } }).catch(() => {})
+              }
+            })
+            .catch(() => {})
+        }
+        return () => {
+          alive = false
+        }
+      }, [sessionId])
+
+      const toggle = () => {
+        const next = !on
+        setOn(next)
+        try {
+          window.localStorage.setItem(storageKey(sessionId), next ? '1' : '0')
+        } catch {
+          /* ignore */
+        }
+        if (sessionId) {
+          api('/checkbox', { body: { sessionId, enabled: next } }).catch(() => {})
+        }
+      }
+
+      return React.createElement(React.Fragment, null,
+        h('style', { key: 'sd-css' }, CSS),
+        h('button', {
+          key: 'sd-toggle',
+          type: 'button',
+          className: `sd-toggle${on ? ' on' : ''}`,
+          title: t('toggleHint'),
+          'aria-pressed': on ? 'true' : 'false',
+          onClick: toggle,
+          style: { marginLeft: 2 },
+        },
+          h('span', { className: 'box' }, on ? '✓' : ''),
+          h('span', { className: 'fish' }, '🐟'),
+          h('span', null, t('toggleOn')),
+        ),
+      )
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Recommendation bubble                                             */
+    /* ---------------------------------------------------------------- */
+
+    const FALLBACK_STEPS = [
+      { id: 'analyze', labelKey: 'stepAnalyze' },
+      { id: 'search', labelKey: 'stepSearch' },
+      { id: 'audit', labelKey: 'stepAudit' },
+      { id: 'download', labelKey: 'stepDownload' },
+      { id: 'enable', labelKey: 'stepEnable' },
+    ]
+
+    function DetectiveDock(props) {
+      const { t } = props
+      const [view, setView] = useState(null)
+      const [steps, setSteps] = useState([])
+      const [fade, setFade] = useState(false)
+      const timerRef = useRef(null)
+      const doneRef = useRef(false)
+      const sessionRef = useRef('')
+      const viewRef = useRef(null)
+      viewRef.current = view
+
+      const clearTimers = () => {
+        if (timerRef.current !== null) {
+          clearTimeout(timerRef.current)
+          timerRef.current = null
+        }
+      }
+
+      const schedule = (fn, ms) => {
+        clearTimers()
+        timerRef.current = setTimeout(fn, ms)
+      }
+
+      // Poll the host for a recommendation produced by a committed user message.
+      // The host picks the newest pending across Sessions because this seat is
+      // frame-wide: it must keep showing while a question composer replaces the
+      // conversation composer.
+      useEffect(() => {
+        let alive = true
+        const tick = async () => {
+          try {
+            const payload = await api('/pending/latest')
+            if (!alive || !payload.pending) return
+            if (doneRef.current) return
+            if (viewRef.current !== null) return
+            const pending = payload.pending
+            sessionRef.current = payload.sessionId ?? ''
+            if (pending.kind === 'covered') {
+              setView({ kind: 'covered', name: pending.name })
+              if (sessionRef.current) api('/dismiss', { body: { sessionId: sessionRef.current } }).catch(() => {})
+              schedule(() => setView(null), 3200)
+              return
+            }
+            if (pending.kind === 'recommend') {
+              setView({ kind: 'recommend', label: pending.label, need: pending.need, candidates: pending.candidates })
+            }
+          } catch {
+            /* the host may still be booting */
+          }
+        }
+        tick()
+        const handle = setInterval(tick, 1800)
+        return () => {
+          alive = false
+          clearInterval(handle)
+          clearTimers()
+        }
+      }, [])
+
+      const dismiss = async () => {
+        setView(null)
+        clearTimers()
+        if (sessionRef.current) await api('/dismiss', { body: { sessionId: sessionRef.current } }).catch(() => {})
+      }
+
+      const start = async (needArg, labelArg) => {
+        const need = needArg ?? view?.need
+        const label = labelArg ?? view?.label
+        if (need === undefined || label === undefined) return
+        doneRef.current = false
+        setFade(false)
+        setSteps(FALLBACK_STEPS.map(step => ({
+          id: step.id,
+          label: t(step.labelKey),
+          detail: step.id === 'analyze' ? `识别到「${label}」需求` : '',
+          status: 'pending',
+        })))
+        setView({ kind: 'progress' })
+
+        // Light up the visual steps while the host works.
+        let cursor = 0
+        const advance = () => {
+          cursor += 1
+          setSteps(current => current.map((step, index) => {
+            if (index < cursor) return { ...step, status: step.status === 'fail' ? 'fail' : 'ok' }
+            if (index === cursor) return { ...step, status: 'run' }
+            return step
+          }))
+          if (cursor < FALLBACK_STEPS.length) {
+            timerRef.current = setTimeout(advance, 420)
+          }
+        }
+        timerRef.current = setTimeout(advance, 380)
+
+        try {
+          const result = await api('/install', {
+            body: { need, sessionId: sessionRef.current },
+          })
+          clearTimers()
+          const real = Array.isArray(result.steps) ? result.steps : []
+          if (real.length > 0) {
+            // Reveal the host's real steps in order so the progress view shows
+            // what actually happened instead of a single instant jump.
+            const mapped = real.map(step => ({
+              id: step.id,
+              label: step.label,
+              detail: step.detail,
+              status: step.status === 'fail' ? 'fail' : step.status === 'skip' ? 'skip' : 'ok',
+            }))
+            for (let index = 1; index <= mapped.length; index += 1) {
+              setSteps(mapped.slice(0, index))
+              await new Promise(resolve => setTimeout(resolve, 400))
+            }
+          }
+          if (result.ok) {
+            doneRef.current = true
+            setView({ kind: 'done', name: result.name })
+            if (sessionRef.current) api('/dismiss', { body: { sessionId: sessionRef.current } }).catch(() => {})
+            schedule(() => {
+              setFade(true)
+              schedule(() => setView(null), 420)
+            }, 4200)
+          } else {
+            setView({ kind: 'none', need, label })
+          }
+        } catch (error) {
+          clearTimers()
+          setSteps(current => current.map((step, index) => (index === 0 && step.status === 'pending' ? { ...step, status: 'fail', detail: String(error.message ?? error) } : step)))
+          setView({ kind: 'none', need, label })
+        }
+      }
+
+      if (view === null) return null
+
+      let body = null
+      if (view.kind === 'recommend') {
+        body = h(React.Fragment, null,
+          h('div', { className: 'sd-bubble-text' }, '🐟 ', h('em', null, t('bubbleAsk', { label: view.label }))),
+          h('div', { className: 'sd-bubble-actions' },
+            h('button', { className: 'sd-pbtn main', type: 'button', onClick: () => start() }, t('find')),
+            h('button', { className: 'sd-pbtn', type: 'button', onClick: dismiss }, t('notNow')),
+          ),
+        )
+      } else if (view.kind === 'progress') {
+        body = h('div', null,
+          h('div', { className: 'sd-sub', style: { marginBottom: 8 } }, t('progressKicker')),
+          h('div', { className: 'sd-steps' }, steps.map(step => h('div', { key: step.id, className: `sd-step ${step.status}` },
+            h('span', { className: 'dot' }, step.status === 'ok' ? '✓' : step.status === 'fail' ? '×' : step.status === 'run' ? '·' : ''),
+            h('div', null,
+              h('div', { className: 'lab' }, step.label),
+              step.detail ? h('div', { className: 'det' }, step.detail) : null,
+            ),
+          ))),
+        )
+      } else if (view.kind === 'done') {
+        body = h('div', { className: 'sd-done' }, '✓ ', t('doneLine', { name: view.name }))
+      } else if (view.kind === 'covered') {
+        body = h('div', { className: 'sd-bubble-text' }, '✓ ', t('coveredLine', { name: view.name }))
+      } else if (view.kind === 'none') {
+        body = h(React.Fragment, null,
+          h('div', { className: 'sd-bubble-text' }, '🐟 ', t('noneLine')),
+          h('div', { className: 'sd-bubble-actions' },
+            h('button', { className: 'sd-pbtn main', type: 'button', onClick: () => start(view.need, view.label) }, t('retry')),
+            h('button', { className: 'sd-pbtn', type: 'button', onClick: () => setView(null) }, t('close')),
+          ),
+        )
+      }
+
+      return h('div', { className: `sd-dock${fade ? ' sd-dim' : ''}` },
+        h('style', { key: 'sd-css' }, CSS),
+        h('div', { className: 'sd-bubble', role: 'status' }, body),
+      )
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Manager page                                                      */
+    /* ---------------------------------------------------------------- */
+
+    const ORIGIN_META = {
+      plugin: { labelKey: 'plugin', badge: '', groupKey: 'groupPlugin' },
+      market: { labelKey: 'marketOrigin', badge: '', groupKey: 'groupMarket' },
+      user: { labelKey: 'user', badge: 'grey', groupKey: 'groupUser' },
+    }
+
+    function scopeLabel(scope, t) {
+      if (scope === 'global') return t('scopeGlobal')
+      if (scope === 'temp') return t('scopeTemp')
+      return t('scopeWorkspace')
+    }
+
+    function Row(props) {
+      const { skill, t, onDetail, onOpen, onToggle, onAskDelete, deleting, busy } = props
+      const meta = ORIGIN_META[skill.origin] ?? ORIGIN_META.user
+      const status = !skill.enabled ? { text: t('disabled'), cls: 'grey' } : skill.origin === 'user' ? { text: t('local'), cls: 'grey' } : { text: t('reviewed'), cls: '' }
+      const sourceLine = skill.origin === 'user'
+        ? null
+        : `${skill.source || `skills.sh/${skill.name}`}${skill.author ? ` · 作者 ${skill.author}` : ''}`
+      const metaParts = [
+        skill.origin === 'user' ? '本地' : skill.source ? 'skills.sh' : '',
+        skill.installs !== null ? `${skill.installsLabel} 安装` : '',
+        skill.sizeLabel,
+        scopeLabel(skill.scope, t),
+        skill.timeLabel,
+      ].filter(part => part !== '' && part !== undefined)
+
+      if (deleting) {
+        return h('div', { className: 'sd-delbar' },
+          h('span', null, t('delConfirm', { name: skill.name })),
+          h('span', { className: 'sd-spacer' }),
+          h('button', { className: 'sd-btn danger', type: 'button', onClick: () => onAskDelete(skill, 'confirm') }, t('confirmDel')),
+          h('button', { className: 'sd-btn', type: 'button', onClick: () => onAskDelete(skill, 'cancel') }, t('cancel')),
+        )
+      }
+
+      return h('div', { className: `sd-row${skill.enabled ? '' : ' off'}` },
+        h('div', { className: 'sd-icon' }, skillEmoji(skill.name)),
+        h('div', { className: 'sd-main' },
+          h('div', { className: 'sd-name-line' },
+            h('span', { className: 'sd-name' }, skill.name),
+            h('span', { className: 'sd-ver' }, `v${skill.version}`),
+            h('span', { className: `sd-badge${meta.badge ? ` ${meta.badge}` : ''}` }, t(meta.labelKey)),
+          ),
+          h('div', { className: 'sd-meta' }, metaParts.join(' · ')),
+          sourceLine ? h('div', { className: 'sd-subline' }, sourceLine) : null,
+          h('div', { className: `sd-subline${skill.permWarn ? ' warn' : ''}` }, `最高权限：${skill.permLabel}`),
+        ),
+        h('div', { className: 'sd-actions' },
+          h('span', { className: `sd-badge${status.cls ? ` ${status.cls}` : ''}` }, status.text),
+          h('button', { className: 'sd-iconbtn', type: 'button', title: t('detail'), onClick: () => onDetail(skill) }, iconInfo(15)),
+          h('button', { className: 'sd-iconbtn', type: 'button', title: t('openFolder'), onClick: () => onOpen(skill) }, iconFolder(15)),
+          h('button', {
+            className: 'sd-iconbtn', type: 'button', title: skill.enabled ? t('disable') : t('enable'),
+            disabled: busy, onClick: () => onToggle(skill),
+          }, skill.enabled ? iconMinus(15) : iconPlus(15)),
+          h('button', { className: 'sd-iconbtn danger', type: 'button', title: t('del'), onClick: () => onAskDelete(skill, 'ask') }, iconTrash(15)),
+        ),
+      )
+    }
+
+    function DetailModal(props) {
+      const { name, workspace, t, onClose, onOpen, onToggle, onDelete } = props
+      const [data, setData] = useState(null)
+      const [error, setError] = useState('')
+
+      useEffect(() => {
+        const onKey = event => {
+          if (event.key === 'Escape') onClose()
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+      }, [onClose])
+
+      useEffect(() => {
+        let alive = true
+        api(`/detail?name=${encodeURIComponent(name)}&workspace=${encodeURIComponent(workspace ?? '')}`)
+          .then(payload => {
+            if (alive) setData(payload)
+          })
+          .catch(err => {
+            if (alive) setError(err.message)
+          })
+        return () => {
+          alive = false
+        }
+      }, [name, workspace])
+
+      const skill = data?.skill
+      return h('div', { className: 'sd-overlay', onMouseDown: event => { if (event.target === event.currentTarget) onClose() } },
+        h('div', { className: 'sd-modal', role: 'dialog', 'aria-modal': 'true' },
+          h('h3', null, name),
+          skill ? h('div', { className: 'sd-muted' }, `v${skill.version} · ${skill.origin === 'user' ? t('user') : skill.origin === 'market' ? t('marketOrigin') : t('plugin')} · ${scopeLabel(skill.scope, t)}`) : h('div', { className: 'sd-muted' }, '…'),
+          error ? h('div', { style: { color: '#ff8080', fontSize: 12, marginTop: 8 } }, error) : null,
+          skill ? h('dl', { className: 'sd-kv' },
+            h('dt', null, t('source')), h('dd', null, skill.source || '本地'),
+            h('dt', null, t('installs')), h('dd', null, skill.installs !== null ? `${skill.installsLabel} 安装` : '—'),
+            h('dt', null, t('size')), h('dd', null, skill.sizeLabel),
+            h('dt', null, t('scope')), h('dd', null, scopeLabel(skill.scope, t)),
+            h('dt', null, t('installedAt')), h('dd', null, skill.installedAt ? new Date(skill.installedAt).toLocaleString() : '—'),
+            h('dt', null, t('status')), h('dd', null, skill.status),
+            h('dt', null, t('perm')), h('dd', { style: skill.permWarn ? { color: '#c9a96a' } : undefined }, skill.permLabel),
+          ) : null,
+          data ? h('div', null,
+            h('div', { className: 'sd-h4' }, t('fileTree')),
+            h('div', { className: 'sd-tree' }, data.tree.map((item, index) => h('div', { key: index }, `${'  '.repeat(Math.max(0, item.depth))}${item.type === 'dir' ? '▸ ' : '· '}${item.path.split('/').pop()}${item.size !== undefined ? `  (${item.size} B)` : ''}`))),
+            h('div', { className: 'sd-h4' }, `${t('preview')} · ${data.previewBytes} B`),
+            h('pre', { className: 'sd-pre' }, data.preview.slice(0, 20000)),
+          ) : null,
+          h('div', { className: 'sd-modal-foot' },
+            skill ? h('button', { className: 'sd-btn', type: 'button', onClick: () => { onOpen(skill) } }, t('openFolder')) : null,
+            skill ? h('button', { className: 'sd-btn', type: 'button', onClick: () => { onToggle(skill); onClose() } }, skill.enabled ? t('disable') : t('enable')) : null,
+            skill ? h('button', { className: 'sd-btn danger', type: 'button', onClick: () => { onDelete(skill); onClose() } }, t('del')) : null,
+            h('button', { className: 'sd-btn primary', type: 'button', onClick: onClose }, t('close')),
+          ),
+        ),
+      )
+    }
+
+    function SettingsModal(props) {
+      const { data, t, onClose, onSaved } = props
+      const workspaces = data.workspaces ?? []
+      const [defaultScope, setDefaultScope] = useState(data.settings.defaultScope ?? 'workspace')
+      const [rows, setRows] = useState(() => {
+        const map = {}
+        for (const skill of data.installed) {
+          map[skill.name] = { scope: skill.scope === 'global' ? 'global' : skill.scope === 'temp' ? 'temp' : 'workspace', workspaces: [data.workspace] }
+        }
+        return map
+      })
+      const [saving, setSaving] = useState(false)
+      const [error, setError] = useState('')
+
+      useEffect(() => {
+        const onKey = event => {
+          if (event.key === 'Escape') onClose()
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+      }, [onClose])
+
+      const setRow = (name, patch) => setRows(current => ({ ...current, [name]: { ...current[name], ...patch } }))
+
+      const save = async () => {
+        setSaving(true)
+        setError('')
+        try {
+          await api('/settings', { body: { defaultScope } })
+          for (const skill of data.installed) {
+            const row = rows[skill.name]
+            if (row === undefined) continue
+            const changed = row.scope !== (skill.scope === 'global' ? 'global' : skill.scope === 'temp' ? 'temp' : 'workspace')
+            if (!changed) continue
+            await api('/scope', {
+              body: { name: skill.name, scope: row.scope, workspaces: row.workspaces, workspace: data.workspace },
+            })
+          }
+          onSaved()
+          onClose()
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setSaving(false)
+        }
+      }
+
+      return h('div', { className: 'sd-overlay', onMouseDown: event => { if (event.target === event.currentTarget) onClose() } },
+        h('div', { className: 'sd-modal', role: 'dialog', 'aria-modal': 'true' },
+          h('h3', null, t('settingsTitle')),
+          h('div', { className: 'sd-muted' }, t('defaultScopeHint')),
+          h('div', { className: 'sd-h4' }, t('defaultScope')),
+          h('div', { className: 'sd-radios' },
+            h('button', {
+              type: 'button', className: `sd-radio${defaultScope === 'workspace' ? ' on' : ''}`,
+              onClick: () => setDefaultScope('workspace'),
+            }, h('b', null, t('workspaceCard')), h('span', null, t('workspaceHint'))),
+            h('button', {
+              type: 'button', className: `sd-radio${defaultScope === 'global' ? ' on' : ''}`,
+              onClick: () => setDefaultScope('global'),
+            }, h('b', null, t('globalCard')), h('span', null, t('globalHint'))),
+          ),
+          h('div', { className: 'sd-h4' }, t('scopeRows')),
+          h('div', { className: 'sd-muted', style: { marginBottom: 6 } }, t('scopeRowsHint')),
+          data.installed.map(skill => {
+            const row = rows[skill.name]
+            return h('div', { key: skill.name },
+              h('div', { className: 'sd-srow' },
+                h('span', { className: 'nm' }, skill.name),
+                h('select', {
+                  className: 'sd-select',
+                  value: row?.scope ?? 'workspace',
+                  onChange: event => setRow(skill.name, { scope: event.target.value }),
+                },
+                  h('option', { value: 'temp' }, t('scopeTemp')),
+                  h('option', { value: 'workspace' }, t('scopeWorkspace')),
+                  h('option', { value: 'global' }, t('scopeGlobal')),
+                ),
+              ),
+              row?.scope === 'workspace'
+                ? h('div', { className: 'sd-wschips' }, workspaces.map(item => {
+                  const active = (row.workspaces ?? []).includes(item.path)
+                  return h('button', {
+                    key: item.path,
+                    type: 'button',
+                    className: `sd-wschip${active ? ' on' : ''}`,
+                    onClick: () => setRow(skill.name, {
+                      workspaces: active
+                        ? (row.workspaces ?? []).filter(path => path !== item.path)
+                        : [...(row.workspaces ?? []), item.path],
+                    }),
+                  }, item.title)
+                }))
+                : null,
+            )
+          }),
+          error ? h('div', { style: { color: '#ff8080', fontSize: 12, marginTop: 10 } }, error) : null,
+          h('div', { className: 'sd-modal-foot' },
+            h('button', { className: 'sd-btn', type: 'button', onClick: onClose }, t('cancel')),
+            h('button', { className: 'sd-btn primary', type: 'button', disabled: saving, onClick: save }, saving ? t('saving') : t('save')),
+          ),
+        ),
+      )
+    }
+
+    function MarketView(props) {
+      const { t, workspace, onBack, onInstalled, pushToast } = props
+      const [skills, setSkills] = useState([])
+      const [error, setError] = useState('')
+      const [busy, setBusy] = useState({})
+      const [phase, setPhase] = useState({})
+      const [failures, setFailures] = useState({})
+      const [query, setQuery] = useState('')
+      const [visibleCount, setVisibleCount] = useState(MARKET_PAGE_SIZE)
+
+      const load = useCallback(() => {
+        api(`/market?workspace=${encodeURIComponent(workspace ?? '')}`)
+          .then(payload => {
+            setSkills(payload.skills)
+            setError('')
+          })
+          .catch(err => setError(err.message))
+      }, [workspace])
+
+      useEffect(() => {
+        load()
+      }, [load])
+
+      const install = async skill => {
+        if (busy[skill.name]) return
+        setBusy(current => ({ ...current, [skill.name]: true }))
+        setPhase(current => ({ ...current, [skill.name]: 'auditing' }))
+        const timer = setTimeout(() => setPhase(current => ({ ...current, [skill.name]: 'installing' })), 700)
+        try {
+          const result = await api('/install', { body: { name: skill.name, origin: 'market', workspace } })
+          clearTimeout(timer)
+          if (result.ok) {
+            setPhase(current => ({ ...current, [skill.name]: 'done' }))
+            setFailures(current => ({ ...current, [skill.name]: '' }))
+            setSkills(current => current.map(item => (item.name === skill.name ? { ...item, installed: true } : item)))
+            onInstalled?.()
+            pushToast(`${t('marketInstalling', { name: skill.name })} ✓`)
+          } else {
+            setPhase(current => ({ ...current, [skill.name]: '' }))
+            const failedStep = Array.isArray(result.steps)
+              ? [...result.steps].reverse().find(step => step.status === 'fail')
+              : undefined
+            const message = failedStep?.detail ?? t('noneLine')
+            setFailures(current => ({ ...current, [skill.name]: message }))
+            pushToast(`${skill.name} · ${message}`)
+          }
+        } catch (err) {
+          clearTimeout(timer)
+          setPhase(current => ({ ...current, [skill.name]: '' }))
+          setFailures(current => ({ ...current, [skill.name]: err.message }))
+          pushToast(err.message)
+        } finally {
+          setBusy(current => ({ ...current, [skill.name]: false }))
+        }
+      }
+
+      const filtered = useMemo(() => {
+        const needle = query.trim().toLowerCase()
+        if (needle === '') return skills
+        return skills.filter(skill =>
+          String(skill.name).toLowerCase().includes(needle) ||
+          String(skill.description ?? '').toLowerCase().includes(needle))
+      }, [skills, query])
+
+      const visible = filtered.slice(0, visibleCount)
+      const hasMore = filtered.length > visibleCount
+
+      // A new query always restarts from the first batch.
+      useEffect(() => {
+        setVisibleCount(MARKET_PAGE_SIZE)
+      }, [query])
+
+      return h('div', { className: 'sd-page-inner' },
+        h('div', { className: 'sd-topbar' },
+          h('button', { className: 'sd-back', type: 'button', title: t('back'), onClick: onBack }, iconBack(16)),
+          h('span', { className: 'sd-title' }, t('marketTitle')),
+          h('span', { className: 'sd-sub' }, t('marketSource')),
+          h('span', { className: 'sd-spacer' }),
+        ),
+        error ? h('div', { className: 'sd-sub', style: { color: '#c9a96a', paddingBottom: 10 } }, error) : null,
+        h('input', {
+          className: 'sd-search sd-market-search',
+          placeholder: t('marketSearch'),
+          value: query,
+          onChange: event => setQuery(event.target.value),
+          'aria-label': t('marketSearch'),
+        }),
+        h('div', { className: 'sd-markets' },
+          visible.map(skill => {
+            const state = phase[skill.name]
+            const installed = skill.installed || state === 'done'
+            return h('div', { key: skill.name, className: 'sd-card' },
+              h('div', { className: 'sd-card-head' },
+                h('div', { className: 'sd-icon' }, skillEmoji(skill.name)),
+                h('div', null,
+                  h('div', { className: 'sd-card-name' }, skill.name),
+                  h('div', { style: { color: '#5d6169', fontSize: 11 } }, `v${skill.version} · ${skill.category}`),
+                ),
+              ),
+              h('div', { className: 'sd-card-desc' }, skill.description),
+              failures[skill.name] ? h('div', { style: { color: '#ff8080', fontSize: 11, lineHeight: 1.5 } }, failures[skill.name]) : null,
+              h('div', { className: 'sd-card-foot' },
+                h('span', null, `${skill.installsLabel} · ${skill.author}`),
+                installed
+                  ? h('span', { style: { color: '#35e0d2', marginLeft: 'auto', fontSize: 12 } }, `✓ ${t('installed')}`)
+                  : h('button', {
+                    className: 'sd-btn primary', type: 'button', disabled: busy[skill.name],
+                    onClick: () => install(skill),
+                  }, state === 'auditing' ? t('auditing') : state === 'installing' ? t('installing') : t('install')),
+              ),
+            )
+          }),
+        ),
+        filtered.length === 0
+          ? h('div', { className: 'sd-empty' }, t('marketEmpty'))
+          : h('div', { className: 'sd-more-wrap' },
+            hasMore
+              ? h('button', {
+                className: 'sd-btn',
+                type: 'button',
+                onClick: () => setVisibleCount(current => current + MARKET_PAGE_SIZE),
+              }, t('loadMore', { shown: visible.length, total: filtered.length }))
+              : h('div', { className: 'sd-more-done' }, t('allLoaded', { n: filtered.length })),
+          ),
+      )
+    }
+
+    function ManagerPanel(props) {
+      const { t, layout } = props
+      const [data, setData] = useState(null)
+      const [error, setError] = useState('')
+      const [query, setQuery] = useState('')
+      const [filter, setFilter] = useState('all')
+      const [view, setView] = useState('list')
+      const [deleting, setDeleting] = useState(null)
+      const [detail, setDetail] = useState(null)
+      const [settingsOpen, setSettingsOpen] = useState(false)
+      const [busy, setBusy] = useState(false)
+      const [toasts, pushToast] = useToasts()
+
+      const load = useCallback(() => {
+        api('/state')
+          .then(payload => {
+            setData(payload)
+            setError('')
+            try {
+              document.body.dataset.sdWorkspace = payload.workspace
+            } catch {
+              /* ignore */
+            }
+          })
+          .catch(err => setError(err.message))
+      }, [])
+
+      useEffect(() => {
+        load()
+      }, [load])
+
+      const workspace = data?.workspace ?? ''
+
+      const installed = useMemo(() => data?.installed ?? [], [data])
+      const counts = useMemo(() => {
+        const out = { plugin: 0, market: 0, user: 0 }
+        for (const skill of installed) out[skill.origin] = (out[skill.origin] ?? 0) + 1
+        return out
+      }, [installed])
+
+      const visible = useMemo(() => {
+        const needle = query.trim().toLowerCase()
+        return installed.filter(skill => {
+          if (filter !== 'all' && skill.origin !== filter) return false
+          if (needle === '') return true
+          return skill.name.toLowerCase().includes(needle) || (skill.description ?? '').toLowerCase().includes(needle)
+        })
+      }, [installed, filter, query])
+
+      const groups = useMemo(() => {
+        const order = ['plugin', 'market', 'user']
+        return order.map(origin => ({
+          origin,
+          items: visible.filter(skill => skill.origin === origin),
+        })).filter(group => group.items.length > 0)
+      }, [visible])
+
+      const openFolder = async skill => {
+        try {
+          await api('/open', { body: { name: skill.name, workspace } })
+          pushToast(t('openFolder'))
+        } catch (err) {
+          pushToast(err.message)
+        }
+      }
+
+      const toggle = async skill => {
+        if (busy) return
+        setBusy(true)
+        try {
+          await api('/toggle', { body: { name: skill.name, enabled: !skill.enabled, workspace } })
+          pushToast(skill.enabled ? t('toastDisabled', { name: skill.name }) : t('toastEnabled', { name: skill.name }))
+          load()
+        } catch (err) {
+          pushToast(err.message)
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      const askDelete = (skill, action) => {
+        if (action === 'ask') setDeleting(skill.name)
+        else if (action === 'cancel') setDeleting(null)
+        else {
+          api('/delete', { body: { name: skill.name, workspace } })
+            .then(() => {
+              setDeleting(null)
+              pushToast(t('deleted', { name: skill.name }))
+              load()
+            })
+            .catch(err => pushToast(err.message))
+        }
+      }
+
+      const openRoot = async () => {
+        try {
+          await api('/open-root', { body: { workspace } })
+        } catch (err) {
+          pushToast(err.message)
+        }
+      }
+
+      if (error !== '' && data === null) {
+        return h('div', { className: 'sd-page' }, h('style', { key: 'sd-css' }, CSS), h('div', { className: 'sd-page-inner' },
+          h('div', { className: 'sd-empty' }, h('b', null, t('loadFail')), error),
+        ))
+      }
+
+      if (view === 'market') {
+        return h('div', { className: 'sd-page' },
+          h('style', { key: 'sd-css' }, CSS),
+          h(MarketView, {
+            t,
+            workspace,
+            pushToast,
+            onBack: () => setView('list'),
+            onInstalled: load,
+          }),
+          toasts.map(item => h('div', { key: item.id, className: 'sd-toast' }, item.text)),
+        )
+      }
+
+      return h('div', { className: 'sd-page' },
+        h('style', { key: 'sd-css' }, CSS),
+        h('div', { className: 'sd-page-inner' },
+          h('div', { className: 'sd-topbar' },
+            h('button', { className: 'sd-back', type: 'button', title: t('back'), onClick: () => { try { layout?.selectPanel?.('conversation') } catch { /* ignore */ } } }, iconBack(16)),
+            h('span', { className: 'sd-title' }, t('panelTitle')),
+            h('span', { className: 'sd-sub' }, t('installedN', { n: installed.length })),
+            h('span', { className: 'sd-spacer' }),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setView('market') }, iconMarket(14), t('market')),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setSettingsOpen(true) }, iconGear(14), t('settings')),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: openRoot }, iconFolder(14), t('openDir')),
+          ),
+          h('div', { className: 'sd-stats' },
+            h('span', null, h('b', null, installed.length), ' 个已安装'),
+            h('span', { className: 'sep' }, '·'),
+            h('span', null, t('statPlugin', { n: counts.plugin })),
+            h('span', { className: 'sep' }, '·'),
+            h('span', null, t('statMarket', { n: counts.market })),
+            h('span', { className: 'sep' }, '·'),
+            h('span', null, t('statUser', { n: counts.user })),
+            h('span', { className: 'sep' }, '·'),
+            h('span', null, t('statRoot')),
+          ),
+          h('input', {
+            className: 'sd-search',
+            placeholder: t('search'),
+            value: query,
+            onChange: event => setQuery(event.target.value),
+            'aria-label': t('search'),
+          }),
+          h('div', { className: 'sd-chips' },
+            ['all', 'plugin', 'market', 'user'].map(key => h('button', {
+              key,
+              type: 'button',
+              className: `sd-chip${filter === key ? ' on' : ''}`,
+              onClick: () => setFilter(key),
+            }, key === 'all' ? t('all') : key === 'plugin' ? t('plugin') : key === 'market' ? t('marketOrigin') : t('user'))),
+          ),
+          installed.length === 0
+            ? h('div', { className: 'sd-empty' },
+              h('b', null, t('emptyTitle')),
+              h('div', null, t('emptyHint')),
+              h('div', { style: { marginTop: 14 } },
+                h('button', { className: 'sd-btn primary', type: 'button', onClick: () => setView('market') }, t('openMarket')),
+              ),
+            )
+            : groups.map(group => h('div', { key: group.origin, className: 'sd-group' },
+              filter === 'all'
+                ? h('div', { className: 'sd-group-title' }, `${t(ORIGIN_META[group.origin].groupKey)} (${group.items.length})`)
+                : null,
+              group.items.map(skill => h(Row, {
+                key: skill.name,
+                skill,
+                t,
+                busy,
+                deleting: deleting === skill.name,
+                onDetail: setDetail,
+                onOpen: openFolder,
+                onToggle: toggle,
+                onAskDelete: askDelete,
+              })),
+            )),
+        ),
+        detail ? h(DetailModal, {
+          name: detail.name,
+          workspace,
+          t,
+          onClose: () => setDetail(null),
+          onOpen: openFolder,
+          onToggle: toggle,
+          onDelete: skill => askDelete(skill, 'confirm'),
+        }) : null,
+        settingsOpen && data ? h(SettingsModal, {
+          data,
+          t,
+          onClose: () => setSettingsOpen(false),
+          onSaved: () => {
+            pushToast(t('toastScope'))
+            load()
+          },
+        }) : null,
+        toasts.map(item => h('div', { key: item.id, className: 'sd-toast' }, item.text)),
+      )
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Sidebar icon                                                      */
+    /* ---------------------------------------------------------------- */
+
+    function PanelIcon(props) {
+      const size = typeof props?.size === 'number' ? props.size : 18
+      return h('svg', {
+        width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': true, style: { display: 'block' },
+      },
+        h('path', { d: 'M15.4 4.6c2.6 0 4.6 2 4.6 4.6 0 4.2-4 8.2-8.2 9.6-1.4.5-2.9.3-4-.5-.7-.5-.9-1.4-.5-2.1.4-.7 1.3-.9 2-.5' }),
+        h('path', { d: 'M15.4 4.6c-2.1 1.1-3.6 2.9-4.3 5-.5 1.5-.4 3.1.2 4.5' }),
+        h('circle', { cx: 15.6, cy: 9.2, r: .9, fill: 'currentColor', stroke: 'none' }),
+        h('path', { d: 'M7 19.6c1.2-.2 2.1-.7 2.8-1.4' }),
+      )
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Plugin                                                           */
+    /* ---------------------------------------------------------------- */
+
+    const inject = ['slots', 'locale']
+
+    function apply(ctx) {
+      ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'skill-detective: dictionaries')
+      const t = ctx.locale.bind(NS)
+
+      ctx.effect(() => {
+        const offToggle = ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+          name: 'conversation.input.left',
+          id: 'skill-detective-toggle',
+          order: 40,
+          label: () => t('toggleOn'),
+          inject: () => ({ t }),
+        }, DetectiveToggle))
+
+        const offDock = ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'skill-detective-bubble',
+          order: 40,
+          inject: () => ({ t }),
+        }, DetectiveDock))
+
+        const offRow = ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+          name: 'sidebar.panellist',
+          id: PANEL_ID,
+          order: PANEL_ORDER,
+          label: () => t('nav'),
+        }, PanelIcon))
+
+        const offPanel = ctx.slots.inject('main', () => ctx.slots.register({
+          name: 'main',
+          key: PANEL_ID,
+          inject: () => ({ t, layout: ctx.get('layout') }),
+        }, ManagerPanel))
+
+        return () => {
+          offPanel()
+          offRow()
+          offDock()
+          offToggle()
+        }
+      }, 'skill-detective: seats')
+    }
+
+    return { inject, apply }
+  },
+})

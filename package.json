@@ -1,0 +1,46 @@
+{
+  "name": "dsh-skill-detective",
+  "version": "0.1.1",
+  "private": false,
+  "type": "module",
+  "description": "Auto skill butler for DeepSeek Harness: detects a missing capability in the conversation, searches skills.sh, audits before install, and manages installed skills in a Web panel.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/52yin14n9/dsh-skill-detective.git"
+  },
+  "homepage": "https://github.com/52yin14n9/dsh-skill-detective#readme",
+  "bugs": {
+    "url": "https://github.com/52yin14n9/dsh-skill-detective/issues"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "catalog.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

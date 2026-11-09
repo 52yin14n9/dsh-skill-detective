@@ -1,0 +1,8 @@
+{
+  "meta": {
+    "title": "Skill Detective",
+    "description": "Finds the skill a conversation needs, searches skills.sh, audits every candidate before install, and manages installed skills (enable, disable, delete, scope) from a Web panel."
+  },
+  "nav": "Skills",
+  "navHint": "Skill Detective"
+}
