@@ -2718,9 +2718,12 @@ class SkillDetective {
         searchText: open.searchText,
       }
     }
+    // Open needs key their suppression by label, so sending one away never
+    // silences every future open need.
+    const suppressionKey = analysis.need === 'open' ? `open:${analysis.label}` : analysis.need
     // A need the user sent away never asks again until restored in settings.
     const suppressed = this.state.data?.suppressed ?? {}
-    if (suppressed[analysis.need] !== undefined) return
+    if (suppressed[suppressionKey] !== undefined) return
     // A removed skill leaves a tombstone: until the record is removed, the same
     // functional group is treated as answered and is not searched again.
     const firstCandidate = analysis.candidates[0]
@@ -2735,7 +2738,7 @@ class SkillDetective {
     // Ask each distinct need once per 10 minutes per session; a different need is
     // never delayed, so a new request is not dropped behind a throttle.
     const now = Date.now()
-    const needKey = `${sessionId}:${analysis.need}`
+    const needKey = `${sessionId}:${suppressionKey}`
     if (now - (this.lastNeedAt.get(needKey) ?? 0) < 10 * 60_000) return
     this.lastNeedAt.set(needKey, now)
 
