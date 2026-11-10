@@ -1,6 +1,6 @@
 # 技能侦探 · Skill Detective
 
-本插件由 CyberMind 的 52yin14n9、Admie、Assomeity、George 联合开发。
+本插件由 CyberMind-labs 的 52yin14n9、Admie、Assomeity、George 联合开发。
 
 给 DeepSeek Harness 用的自动技能管家：在对话里发现缺失的技能，检索候选，安装前做安全审查，安装后统一管理。
 
@@ -53,4 +53,4 @@
 
 ## License
 
-MIT © 2026 CyberMind（52yin14n9、Admie、Assomeity、George）
+MIT © 2026 CyberMind-labs（52yin14n9、Admie、Assomeity、George）
