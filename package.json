@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-detective",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "private": false,
   "type": "module",
   "description": "Auto skill butler for DeepSeek Harness: detects a missing capability in the conversation, searches skills.sh, audits before install, and manages installed skills in a Web panel.",
