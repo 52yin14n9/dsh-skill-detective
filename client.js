@@ -143,6 +143,17 @@ window.__ModuleLoader__.load({
       suppressedHint: '点过「先不用」的需求不会再弹窗，可在这里恢复',
       suppressedEmpty: '暂无',
       restore: '恢复',
+      replaceAsk: '需要同类技能替代',
+      replaceHint: '勾选后自动查找同功能、安装量最高且尚未安装的同类技能并安装',
+      replacing: '查找中…',
+      replaceInstalled: '已安装同类技能 {name}',
+      replaceNone: '未找到同类技能',
+      deletedTitle: '已删除的技能',
+      deletedAt: '删除于',
+      addOther: '增加其他 skill',
+      removeRecord: '移除记录',
+      recordRemoved: '已移除删除记录',
+      deletedHint: '记录保留期间，同类需求不再自动推荐',
       reviewPass: '审查通过',
       deleted: '已删除 {name}',
       toastDisabled: '已禁用 {name}',
@@ -279,6 +290,17 @@ window.__ModuleLoader__.load({
       suppressedHint: 'Needs dismissed with "Not now" never ask again. Restore them here.',
       suppressedEmpty: 'None',
       restore: 'Restore',
+      replaceAsk: 'Replace with a peer',
+      replaceHint: 'Finds the most installed peer of the same task that is not installed yet',
+      replacing: 'Searching…',
+      replaceInstalled: 'Installed peer {name}',
+      replaceNone: 'No peer found',
+      deletedTitle: 'Deleted skills',
+      deletedAt: 'deleted',
+      addOther: 'Add another skill',
+      removeRecord: 'Remove record',
+      recordRemoved: 'Record removed',
+      deletedHint: 'While the record exists, this need is no longer suggested',
       reviewPass: 'Audit passed',
       deleted: 'Deleted {name}',
       toastDisabled: 'Disabled {name}',
@@ -360,7 +382,7 @@ window.__ModuleLoader__.load({
 .sd-iconbtn:hover { background: rgba(255,255,255,.08); color: #e8e8ea; }
 .sd-iconbtn.danger:hover { color: #ff6b6b; background: rgba(255,107,107,.1); }
 .sd-delbar { display: flex; align-items: center; gap: 10px; background: rgba(255,80,80,.08); border: 1px solid rgba(255,80,80,.28); border-radius: 10px; padding: 11px 13px; margin: -2px 0 12px; color: #ff9a9a; font-size: 12.5px; }
-.sd-btn { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03); color: #cfd2d8; font-size: 12.5px; cursor: pointer; }
+.sd-btn { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03); color: #cfd2d8; font-size: 12.5px; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
 .sd-btn:hover { background: rgba(255,255,255,.1); }
 .sd-btn.primary { border: none; background: linear-gradient(135deg, #35e0d2, #7aaaff); color: #06121a; font-weight: 600; }
 .sd-btn.danger { border-color: rgba(255,80,80,.4); color: #ff8080; }
@@ -428,6 +450,10 @@ window.__ModuleLoader__.load({
 .sd-step .det { color: #7a7f88; font-size: 11.5px; }
 .sd-step.fail .lab { color: #ff9a9a; }
 .sd-done { font-size: 13px; color: #35e0d2; display: flex; align-items: center; gap: 6px; }
+.sd-replace { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; padding: 5px 11px; border-radius: 8px; border: 1px solid rgba(201,169,106,.35); background: rgba(201,169,106,.06); color: #c9a96a; font-size: 12px; cursor: pointer; }
+.sd-replace:hover { border-color: rgba(201,169,106,.6); background: rgba(201,169,106,.1); }
+.sd-replace:disabled { opacity: .6; cursor: default; }
+.sd-checkbox { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; flex: 0 0 14px; }
 .sd-dim { opacity: .45; }
 .sd-learn-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
 .sd-learn-list { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; padding-right: 4px; }
@@ -876,7 +902,7 @@ window.__ModuleLoader__.load({
     }
 
     function Row(props) {
-      const { skill, t, onDetail, onOpen, onToggle, onAskDelete, deleting, busy } = props
+      const { skill, t, onDetail, onOpen, onToggle, onAskDelete, onReplace, replacing, deleting, busy } = props
       const meta = ORIGIN_META[skill.origin] ?? ORIGIN_META.user
       const status = !skill.enabled ? { text: t('disabled'), cls: 'grey' } : skill.origin === 'user' ? { text: t('local'), cls: 'grey' } : { text: t('reviewed'), cls: '' }
       const authorText = String(skill.author ?? '')
@@ -913,6 +939,18 @@ window.__ModuleLoader__.load({
           h('div', { className: 'sd-meta' }, metaParts.join(' · ')),
           sourceLine ? h('div', { className: 'sd-subline' }, sourceLine) : null,
           h('div', { className: `sd-subline${skill.permWarn ? ' warn' : ''}` }, `最高权限：${skill.permLabel}`),
+          !skill.enabled
+            ? h('button', {
+              className: 'sd-replace',
+              type: 'button',
+              title: t('replaceHint'),
+              disabled: busy || replacing === skill.name,
+              onClick: () => onReplace(skill),
+            },
+              h('span', { className: 'sd-checkbox' }, replacing === skill.name ? '…' : ''),
+              h('span', null, replacing === skill.name ? t('replacing') : t('replaceAsk')),
+            )
+            : null,
         ),
         h('div', { className: 'sd-actions' },
           h('span', { className: `sd-badge${status.cls ? ` ${status.cls}` : ''}` }, status.text),
@@ -1290,11 +1328,13 @@ window.__ModuleLoader__.load({
             ),
           ),
           h('div', { className: 'sd-learn-main' },
+            h('div', { className: 'sd-group-title' }, analysis !== null
+              ? `${t('peersTitle')} · ${analysis.peers.length + 1}`
+              : '\u00a0'),
             error !== '' ? h('div', { className: 'sd-panel' }, h('div', { style: { color: '#ff9a9a', fontSize: 13 } }, error)) : null,
             loading ? h('div', { className: 'sd-panel' }, h('div', { className: 'sd-hint' }, t('analyzing'))) : null,
             analysis !== null ? h(React.Fragment, null,
               h('div', { className: 'sd-panel' },
-                h('h4', null, `${t('peersTitle')} · ${analysis.peers.length + 1}`),
                 h('div', { className: 'sd-hint', style: { marginBottom: 8 } }, `${analysis.source.name} · ${analysis.source.author || '—'} · ${analysis.source.category || ''}`),
                 h('div', null, analysis.peers.map(peer => h('div', { key: peer.name, className: 'sd-peer' },
                   h('div', { style: { minWidth: 0, flex: 1 } },
@@ -1496,6 +1536,7 @@ window.__ModuleLoader__.load({
       const [settingsOpen, setSettingsOpen] = useState(false)
       const [updatesOpen, setUpdatesOpen] = useState(false)
       const [busy, setBusy] = useState(false)
+      const [replacing, setReplacing] = useState('')
       const [toasts, pushToast] = useToasts()
 
       const load = useCallback(() => {
@@ -1576,6 +1617,30 @@ window.__ModuleLoader__.load({
               load()
             })
             .catch(err => pushToast(err.message))
+        }
+      }
+
+      const replaceSkill = async skill => {
+        if (replacing !== '') return
+        setReplacing(skill.name)
+        try {
+          const result = await api('/replace', { body: { name: skill.name, workspace } })
+          pushToast(t('replaceInstalled', { name: result.name }))
+          load()
+        } catch (err) {
+          pushToast(err.message)
+        } finally {
+          setReplacing('')
+        }
+      }
+
+      const removeRecord = async name => {
+        try {
+          await api('/delete-record', { body: { name } })
+          pushToast(t('recordRemoved'))
+          load()
+        } catch (err) {
+          pushToast(err.message)
         }
       }
 
@@ -1669,6 +1734,30 @@ window.__ModuleLoader__.load({
                   ? t('marketOrigin')
                   : key === 'learned' ? t('learned') : t('user'))),
           ),
+          (data?.deleted ?? []).length > 0 ? h('div', { className: 'sd-group' },
+            h('div', { className: 'sd-group-title' }, `${t('deletedTitle')} (${(data?.deleted ?? []).length})`),
+            h('div', { className: 'sd-hint', style: { margin: '0 2px 10px' } }, t('deletedHint')),
+            (data?.deleted ?? []).map(item => h('div', { key: item.name, className: 'sd-row' },
+              h('div', { className: 'sd-icon' }, '🗑️'),
+              h('div', { className: 'sd-main' },
+                h('div', { className: 'sd-name-line' },
+                  h('span', { className: 'sd-name' }, item.name),
+                  item.category ? h('span', { className: 'sd-ver' }, item.category) : null,
+                ),
+                h('div', { className: 'sd-meta' }, `${t('deletedAt')} ${item.timeLabel}`),
+              ),
+              h('div', { className: 'sd-actions' },
+                h('button', {
+                  className: 'sd-iconbtn', type: 'button', title: t('addOther'),
+                  onClick: () => replaceSkill(item),
+                }, iconPlus(15)),
+                h('button', {
+                  className: 'sd-iconbtn danger sd-remove-record', type: 'button', title: t('removeRecord'),
+                  onClick: () => removeRecord(item.name),
+                }, iconTrash(15)),
+              ),
+            )),
+          ) : null,
           installed.length === 0
             ? h('div', { className: 'sd-empty' },
               h('b', null, t('emptyTitle')),
@@ -1677,22 +1766,26 @@ window.__ModuleLoader__.load({
                 h('button', { className: 'sd-btn primary', type: 'button', onClick: () => setView('market') }, t('openMarket')),
               ),
             )
-            : groups.map(group => h('div', { key: group.origin, className: 'sd-group' },
-              filter === 'all'
-                ? h('div', { className: 'sd-group-title' }, `${t(ORIGIN_META[group.origin].groupKey)} (${group.items.length})`)
-                : null,
-              group.items.map(skill => h(Row, {
-                key: skill.name,
-                skill,
-                t,
-                busy,
-                deleting: deleting === skill.name,
-                onDetail: setDetail,
-                onOpen: openFolder,
-                onToggle: toggle,
-                onAskDelete: askDelete,
-              })),
-            )),
+            : h(React.Fragment, null,
+              groups.map(group => h('div', { key: group.origin, className: 'sd-group' },
+                filter === 'all'
+                  ? h('div', { className: 'sd-group-title' }, `${t(ORIGIN_META[group.origin].groupKey)} (${group.items.length})`)
+                  : null,
+                group.items.map(skill => h(Row, {
+                  key: skill.name,
+                  skill,
+                  t,
+                  busy,
+                  replacing,
+                  deleting: deleting === skill.name,
+                  onDetail: setDetail,
+                  onOpen: openFolder,
+                  onToggle: toggle,
+                  onAskDelete: askDelete,
+                  onReplace: replaceSkill,
+                })),
+              )),
+            ),
         ),
         detail ? h(DetailModal, {
           name: detail.name,

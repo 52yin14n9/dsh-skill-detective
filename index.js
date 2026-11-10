@@ -896,6 +896,18 @@ class StateStore {
         skill: typeof record.skill === 'string' ? record.skill : '',
       }
     }
+    const deletedRaw = state.deleted && typeof state.deleted === 'object' ? state.deleted : {}
+    const deleted = {}
+    for (const [name, value] of Object.entries(deletedRaw)) {
+      if (!isSkillName(name)) continue
+      const record = value && typeof value === 'object' ? value : {}
+      deleted[name] = {
+        at: stamp(record.at),
+        category: typeof record.category === 'string' ? record.category : '',
+        description: typeof record.description === 'string' ? record.description : '',
+        group: typeof record.group === 'string' ? record.group : '',
+      }
+    }
     return {
       version: STATE_VERSION,
       settings: {
@@ -910,6 +922,7 @@ class StateStore {
       },
       installs,
       suppressed,
+      deleted,
     }
   }
 
@@ -1846,13 +1859,82 @@ class SkillDetective {
     await rm(target.path, { recursive: true, force: true })
     await this.state.update(data => {
       delete data.installs[name]
+      // Keep a tombstone: until the user removes it, the same functional group is
+      // treated as "already answered" and is not searched again.
+      data.deleted[name] = {
+        at: Date.now(),
+        category: target.category ?? '',
+        description: target.description ?? '',
+        group: groupOf({ name }),
+      }
     })
     try {
       this.ctx.emit('skills/change')
     } catch {
       /* ignore */
     }
-    return { ok: true, name }
+    return { ok: true, name, deleted: this.deletedList() }
+  }
+
+  /** Tombstones of removed skills, newest first. */
+  deletedList() {
+    const data = this.state.data
+    if (data === null || data === undefined) return []
+    return Object.entries(data.deleted ?? {})
+      .map(([name, record]) => ({
+        name,
+        at: record.at,
+        timeLabel: relativeTime(record.at),
+        category: record.category,
+        description: record.description,
+        group: record.group,
+      }))
+      .sort((a, b) => b.at - a.at)
+  }
+
+  async removeDeletedRecord(name) {
+    if (!isSkillName(name)) return { ok: false }
+    await this.state.update(data => {
+      delete data.deleted[name]
+    })
+    return { ok: true, deleted: this.deletedList() }
+  }
+
+  /**
+   * Offer a same-task alternative for a disabled or deleted skill: pick the most
+   * installed audited peer that is not installed yet and install it.
+   */
+  async replace(name, workspace) {
+    const ws = this.normalizeWorkspace(workspace ?? '')
+    const installed = await this.listInstalled(ws)
+    const current = installed.find(item => item.name === name)
+    const entry = BY_NAME.get(name)
+    // A removed skill is no longer on disk or in the catalog; its tombstone still
+    // carries the category and description needed to find a peer.
+    const record = (this.state.data?.deleted ?? {})[name]
+    if (current === undefined && entry === undefined && record === undefined) throw new Error('技能不存在')
+    const currentEntry = entry ?? {
+      name,
+      category: record?.category ?? current?.category ?? '',
+      description: record?.description ?? current?.description ?? '',
+      whenToUse: '',
+    }
+    const installedNames = new Set(installed.map(item => item.name))
+    const peers = this.auditedCatalog()
+      .filter(item => isRelatedSkill(currentEntry, item) && !installedNames.has(item.name))
+      .sort((a, b) => b.installs - a.installs)
+    if (peers.length === 0) return { ok: false, code: 'no-peers', message: '未找到同类技能' }
+    const best = peers[0]
+    const result = await this.install({ name: best.name, origin: 'market', workspace: ws })
+    if (result.ok !== true) {
+      return { ok: false, code: 'install-failed', message: '同类技能安装失败', detail: result }
+    }
+    return {
+      ok: true,
+      name: best.name,
+      installsLabel: humanCount(best.installs),
+      description: best.description,
+    }
   }
 
   async detail(name, workspace) {
@@ -1924,6 +2006,12 @@ class SkillDetective {
     // A need the user sent away never asks again until restored in settings.
     const suppressed = this.state.data?.suppressed ?? {}
     if (suppressed[analysis.need] !== undefined) return
+    // A removed skill leaves a tombstone: until the record is removed, the same
+    // functional group is treated as answered and is not searched again.
+    const needEntry = BY_NAME.get(analysis.need.candidates[0])
+    const needGroup = needEntry === undefined ? '' : groupOf(needEntry)
+    const deleted = this.state.data?.deleted ?? {}
+    if (needGroup !== '' && Object.values(deleted).some(record => record.group === needGroup)) return
     // A requirement already covered by an installed, enabled skill stays silent:
     // the user asked for work, not for a second nudge about their own skills.
     if (analysis.covered !== null) return
@@ -2122,6 +2210,7 @@ export function apply(ctx) {
               settings: state.settings,
               installed,
               suppressed: service.suppressedList(),
+              deleted: service.deletedList(),
             })
           }
 
@@ -2212,6 +2301,18 @@ export function apply(ctx) {
 
           if (route === '/restore-suppressed') {
             return sendJson(res, 200, await service.restoreSuppressed(String(body.need ?? '')))
+          }
+
+          if (route === '/replace') {
+            if (!isSkillName(String(body.name ?? ''))) return fail(res, 400, 'invalid-name', '技能名不合法')
+            return sendJson(res, 200, await service.replace(
+              String(body.name),
+              service.normalizeWorkspace(body.workspace ?? ''),
+            ))
+          }
+
+          if (route === '/delete-record') {
+            return sendJson(res, 200, await service.removeDeletedRecord(String(body.name ?? '')))
           }
 
           if (route === '/search') {
