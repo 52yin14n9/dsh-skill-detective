@@ -24,6 +24,37 @@ import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { EXTRA_CATALOG } from './catalog.js'
 
+/* ------------------------------------------------------------------ */
+/* Remote skill sources                                                */
+/* ------------------------------------------------------------------ */
+
+const REMOTE_REPOS = new Map() // "owner/repo" -> { at, branch }
+const REMOTE_SEARCH = 'https://skills.sh/api/search'
+
+/** Mirrors tried in order when downloading a SKILL.md from GitHub. */
+const RAW_MIRRORS = [
+  (owner, repo, branch, path) => `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`,
+  (owner, repo, branch, path) => `https://ghproxy.net/https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`,
+  (owner, repo, branch, path) => `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${branch}/${path}`,
+]
+
+async function fetchText(url, timeoutMs = 8000, headers = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'user-agent': 'dsh-skill-detective', ...headers },
+    })
+    if (!response.ok) return { ok: false, status: response.status }
+    return { ok: true, text: await response.text() }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export const name = 'skill-detective'
 
 const API = '/api/dsh-skill-detective'
@@ -1557,42 +1588,179 @@ class SkillDetective {
    * than guessed into candidates.
    */
   async searchSkillsSh(query) {
-    if (query === '') return []
+    const result = await this.fetchSkillsShRows(query)
+    if (!result.ok) throw new Error(result.error)
+    return result.rows.slice(0, 20).map((row, index) => {
+      const skillName = typeof row.name === 'string' ? row.name : typeof row.id === 'string' ? row.id : ''
+      if (!isSkillName(skillName)) return null
+      const installs = Number(row.installs ?? row.installCount ?? 0)
+      return {
+        name: skillName,
+        version: typeof row.version === 'string' ? row.version : '1.0.0',
+        category: typeof row.category === 'string' ? row.category : '',
+        author: typeof row.author === 'string' ? row.author : '',
+        installs: Number.isFinite(installs) ? installs : 0,
+        installsLabel: `${humanCount(Number.isFinite(installs) ? installs : 0)} 安装`,
+        description: typeof row.description === 'string' ? row.description : '',
+        whenToUse: '',
+        perm: 'files',
+        permLabel: permLabel('files').text,
+        permWarn: false,
+        source: `skills.sh/${skillName}`,
+        installed: false,
+        remote: true,
+        rank: index,
+      }
+    }).filter(Boolean)
+  }
+
+  /** Raw skills.sh rows, shared by the recommendation path and online installs. */
+  async fetchSkillsShRows(query) {
+    if (query === '') return { ok: true, rows: [] }
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 6000)
+    const timer = setTimeout(() => controller.abort(), 7000)
     try {
-      const response = await fetch(`https://skills.sh/api/search?q=${encodeURIComponent(query)}`, {
+      const response = await fetch(`${REMOTE_SEARCH}?q=${encodeURIComponent(query)}`, {
         signal: controller.signal,
-        headers: { accept: 'application/json' },
+        headers: { accept: 'application/json', 'user-agent': 'dsh-skill-detective' },
       })
-      if (!response.ok) throw new Error(`skills.sh HTTP ${response.status}`)
+      if (!response.ok) return { ok: false, error: `skills.sh HTTP ${response.status}` }
       const payload = await response.json()
       const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.skills) ? payload.skills : null
-      if (rows === null) throw new Error('skills.sh 返回结构无法识别')
-      return rows.slice(0, 20).map((row, index) => {
-        const skillName = typeof row.name === 'string' ? row.name : typeof row.id === 'string' ? row.id : ''
-        if (!isSkillName(skillName)) return null
-        const installs = Number(row.installs ?? row.installCount ?? 0)
-        return {
-          name: skillName,
-          version: typeof row.version === 'string' ? row.version : '1.0.0',
-          category: typeof row.category === 'string' ? row.category : '',
-          author: typeof row.author === 'string' ? row.author : '',
-          installs: Number.isFinite(installs) ? installs : 0,
-          installsLabel: `${humanCount(Number.isFinite(installs) ? installs : 0)} 安装`,
-          description: typeof row.description === 'string' ? row.description : '',
-          whenToUse: '',
-          perm: 'files',
-          permLabel: permLabel('files').text,
-          permWarn: false,
-          source: `skills.sh/${skillName}`,
-          installed: false,
-          remote: true,
-          rank: index,
-        }
-      }).filter(Boolean)
+      if (rows === null) return { ok: false, error: 'skills.sh 返回结构无法识别' }
+      return { ok: true, rows: rows.slice(0, 30) }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
     } finally {
       clearTimeout(timer)
+    }
+  }
+
+  /** Full online catalog for the marketplace: keeps repo/id so an item can be installed. */
+  async remoteCatalog(query) {
+    const text = String(query ?? '').trim()
+    if (text === '') return { ok: true, source: 'skills.sh', skills: [] }
+    const result = await this.fetchSkillsShRows(text)
+    if (!result.ok) return { ok: false, source: 'skills.sh', error: result.error, skills: [] }
+    const skills = result.rows.map(row => {
+      const id = String(row.id ?? '')
+      const parts = id.split('/')
+      const owner = parts[0] ?? ''
+      const repo = parts[1] ?? ''
+      const skillId = String(row.skillId ?? parts[2] ?? '')
+      const installs = Number(row.installs ?? 0)
+      return {
+        id,
+        owner,
+        repo,
+        skillId,
+        name: String(row.name ?? skillId),
+        installs: Number.isFinite(installs) ? installs : 0,
+        installsLabel: `${humanCount(Number.isFinite(installs) ? installs : 0)} 安装`,
+        repoUrl: owner !== '' && repo !== '' ? `https://github.com/${owner}/${repo}` : '',
+      }
+    }).filter(item => item.id !== '' && item.skillId !== '')
+    return { ok: true, source: 'skills.sh', skills }
+  }
+
+  /** Resolve a skills.sh id to its SKILL.md (default branch + standard layout, mirror fallback). */
+  async resolveRemote(id) {
+    const parts = String(id ?? '').split('/')
+    if (parts.length < 3) return { ok: false, error: '技能 id 不合法' }
+    const [owner, repo, skillId] = parts
+    const repoKey = `${owner}/${repo}`.toLowerCase()
+    let info = REMOTE_REPOS.get(repoKey)
+    if (info === undefined || Date.now() - info.at > 30 * 60_000) {
+      const meta = await fetchText(`https://api.github.com/repos/${owner}/${repo}`, 8000, { accept: 'application/vnd.github+json' })
+      let branch = 'main'
+      if (meta.ok) {
+        try {
+          const parsed = JSON.parse(meta.text)
+          if (typeof parsed.default_branch === 'string' && parsed.default_branch !== '') branch = parsed.default_branch
+        } catch {
+          /* keep main */
+        }
+      }
+      info = { at: Date.now(), branch }
+      REMOTE_REPOS.set(repoKey, info)
+    }
+    const branch = info.branch
+    const candidates = [
+      `skills/${skillId}/SKILL.md`,
+      `.claude/skills/${skillId}/SKILL.md`,
+      `.agents/skills/${skillId}/SKILL.md`,
+      `${skillId}/SKILL.md`,
+      'SKILL.md',
+    ]
+    for (const path of candidates) {
+      for (const mirror of RAW_MIRRORS) {
+        const url = mirror(owner, repo, branch, path)
+        const result = await fetchText(url, 8000)
+        if (result.ok && /^---[\s\S]*?---/.test(result.text)) {
+          return { ok: true, markdown: result.text, source: url, repo: `${owner}/${repo}`, path, branch }
+        }
+      }
+    }
+    return { ok: false, error: '无法定位 SKILL.md（仓库结构不在标准路径内）' }
+  }
+
+  /** Download, audit and install one online skill. */
+  async installRemote(id, workspace, requestedName) {
+    const state = await this.state.load()
+    const scope = state.settings.defaultScope === 'workspace' ? 'workspace' : 'global'
+    const ws = this.normalizeWorkspace(workspace ?? '')
+    const resolved = await this.resolveRemote(id)
+    if (!resolved.ok) return { ok: false, code: 'resolve-failed', message: resolved.error }
+    const verdict = auditFiles([{ path: 'SKILL.md', text: resolved.markdown, code: true }])
+    if (verdict.poison) {
+      return { ok: false, code: 'poison', message: '下载内容未通过安全审查', findings: verdict.findings }
+    }
+    const parts = String(id).split('/')
+    const fallback = parts[2] ?? 'remote-skill'
+    const name = String(requestedName ?? fallback).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+    if (!isSkillName(name)) return { ok: false, code: 'invalid-name', message: '技能名不合法' }
+    const installed = await this.listInstalled(ws)
+    if (installed.some(item => item.name === name)) {
+      return { ok: false, code: 'already-installed', message: '同名技能已安装' }
+    }
+    const root = await this.targetRoot(scope, ws, '')
+    const dir = join(root, name)
+    if (!within(root, dir)) return { ok: false, code: 'bad-path', message: '目标路径越界' }
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'SKILL.md'), resolved.markdown, 'utf8')
+    const bytes = await directorySize(dir)
+    await this.state.update(data => {
+      data.installs[name] = {
+        origin: 'market',
+        scope,
+        installs: 0,
+        author: '',
+        version: '1.0.0',
+        category: '',
+        perm: 'files',
+        source: 'skills.sh',
+        description: '',
+        installedAt: Date.now(),
+        remoteId: id,
+        remoteRepo: resolved.repo,
+        remotePath: resolved.path,
+      }
+    })
+    try {
+      this.ctx.emit('skills/change')
+    } catch {
+      /* ignore */
+    }
+    this.log(`skill-detective: installed remote ${id} as ${name}`)
+    return {
+      ok: true,
+      name,
+      repo: resolved.repo,
+      path: resolved.path,
+      source: resolved.source,
+      bytes,
+      bytesLabel: humanBytes(bytes),
+      findings: verdict.findings,
     }
   }
 
@@ -2318,6 +2486,20 @@ export function apply(ctx) {
           if (route === '/search') {
             const workspace = service.normalizeWorkspace(body.workspace ?? '')
             return sendJson(res, 200, { ok: true, ...await service.search(String(body.query ?? ''), workspace) })
+          }
+
+          if (route === '/remote/search') {
+            return sendJson(res, 200, await service.remoteCatalog(String(body.query ?? '')))
+          }
+
+          if (route === '/remote/install') {
+            const id = String(body.id ?? '')
+            if (id === '') return fail(res, 400, 'invalid-id', '技能 id 不能为空')
+            return sendJson(res, 200, await service.installRemote(
+              id,
+              service.normalizeWorkspace(body.workspace ?? ''),
+              body.name,
+            ))
           }
 
           if (route === '/analyze') {

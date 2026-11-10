@@ -107,6 +107,11 @@ window.__ModuleLoader__.load({
       installed: '已安装',
       marketEmpty: '没找到匹配的技能',
       marketSearch: '搜索市场技能…',
+      remoteSearch: '联网搜索 skills.sh',
+      searching: '搜索中…',
+      remoteResults: '在线结果',
+      remoteError: '在线搜索失败：',
+      remoteInstalled: '已安装 {name}',
       loadMore: '加载更多（已显示 {shown} / {total}）',
       allLoaded: '已全部加载（共 {n} 个）',
       learned: '技能学习',
@@ -255,6 +260,11 @@ window.__ModuleLoader__.load({
       installed: 'Installed',
       marketEmpty: 'No matching skill',
       marketSearch: 'Search the marketplace…',
+      remoteSearch: 'Search skills.sh',
+      searching: 'Searching…',
+      remoteResults: 'Online results',
+      remoteError: 'Online search failed: ',
+      remoteInstalled: 'Installed {name}',
       loadMore: 'Load more ({shown} / {total} shown)',
       allLoaded: 'All loaded ({n} skills)',
       learned: 'Learned',
@@ -416,7 +426,9 @@ window.__ModuleLoader__.load({
 .sd-wschip.dim { opacity: .4; pointer-events: none; }
 .sd-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: rgba(24,25,29,.9); border: 1px solid rgba(255,255,255,.12); color: #e8e8ea; border-radius: 10px; padding: 10px 18px; font-size: 12.5px; z-index: 80; box-shadow: 0 10px 30px rgba(0,0,0,.5); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 .sd-markets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.sd-market-search { margin: 0 0 16px; }
+.sd-market-search-row { display: flex; gap: 10px; margin: 0 0 16px; align-items: center; }
+.sd-market-search-row .sd-search { flex: 1; }
+.sd-market-search-row .sd-btn { height: 40px; }
 .sd-more-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 0 12px; }
 .sd-more-done { color: #a9adb5; font-size: 12.5px; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
 .sd-card { background: rgba(20,20,23,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 15px; display: flex; flex-direction: column; gap: 9px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 14px rgba(0,0,0,.18); }
@@ -1415,6 +1427,10 @@ window.__ModuleLoader__.load({
       const [failures, setFailures] = useState({})
       const [query, setQuery] = useState('')
       const [visibleCount, setVisibleCount] = useState(MARKET_PAGE_SIZE)
+      const [remoteSkills, setRemoteSkills] = useState([])
+      const [remoteState, setRemoteState] = useState('idle')
+      const [remoteError, setRemoteError] = useState('')
+      const [remoteBusy, setRemoteBusy] = useState({})
 
       const load = useCallback(() => {
         api(`/market?workspace=${encodeURIComponent(workspace ?? '')}`)
@@ -1478,6 +1494,38 @@ window.__ModuleLoader__.load({
         setVisibleCount(MARKET_PAGE_SIZE)
       }, [query])
 
+      /** Online lookup against skills.sh, kept separate from the bundled catalog. */
+      const searchRemote = async () => {
+        const keyword = query.trim()
+        if (keyword === '') return
+        setRemoteState('loading')
+        setRemoteError('')
+        try {
+          const result = await api('/remote/search', { body: { query: keyword } })
+          setRemoteSkills(Array.isArray(result.skills) ? result.skills : [])
+          setRemoteState('ok')
+        } catch (err) {
+          setRemoteSkills([])
+          setRemoteError(err.message)
+          setRemoteState('error')
+        }
+      }
+
+      const installRemoteSkill = async item => {
+        if (remoteBusy[item.id] === true) return
+        setRemoteBusy(current => ({ ...current, [item.id]: true }))
+        try {
+          const result = await api('/remote/install', { body: { id: item.id, workspace } })
+          pushToast(`${t('remoteInstalled', { name: result.name })} ✓`)
+          onInstalled?.()
+          setRemoteSkills(current => current.filter(entry => entry.id !== item.id))
+        } catch (err) {
+          pushToast(err.message)
+        } finally {
+          setRemoteBusy(current => ({ ...current, [item.id]: false }))
+        }
+      }
+
       return h('div', { className: 'sd-page-inner' },
         h('div', { className: 'sd-topbar' },
           h('button', { className: 'sd-back', type: 'button', title: t('back'), onClick: onBack }, iconBack(16)),
@@ -1486,13 +1534,41 @@ window.__ModuleLoader__.load({
           h('span', { className: 'sd-spacer' }),
         ),
         error ? h('div', { className: 'sd-sub', style: { color: '#c9a96a', paddingBottom: 10 } }, error) : null,
-        h('input', {
-          className: 'sd-search sd-market-search',
-          placeholder: t('marketSearch'),
-          value: query,
-          onChange: event => setQuery(event.target.value),
-          'aria-label': t('marketSearch'),
-        }),
+        h('div', { className: 'sd-market-search-row' },
+          h('input', {
+            className: 'sd-search',
+            placeholder: t('marketSearch'),
+            value: query,
+            onChange: event => setQuery(event.target.value),
+            'aria-label': t('marketSearch'),
+          }),
+          h('button', {
+            className: 'sd-btn', type: 'button',
+            disabled: remoteState === 'loading' || query.trim() === '',
+            onClick: searchRemote,
+          }, remoteState === 'loading' ? t('searching') : t('remoteSearch')),
+        ),
+        remoteState === 'error' ? h('div', { className: 'sd-hint', style: { marginBottom: 12 } }, `${t('remoteError')}${remoteError}`) : null,
+        remoteSkills.length > 0 ? h('div', { className: 'sd-group' },
+          h('div', { className: 'sd-group-title' }, `${t('remoteResults')} (${remoteSkills.length})`),
+          remoteSkills.map(item => h('div', { key: item.id, className: 'sd-row' },
+            h('div', { className: 'sd-icon' }, '🌐'),
+            h('div', { className: 'sd-main' },
+              h('div', { className: 'sd-name-line' },
+                h('span', { className: 'sd-name' }, item.name),
+                h('span', { className: 'sd-ver' }, item.repo),
+              ),
+              h('div', { className: 'sd-meta' }, `${item.installsLabel} · skills.sh`),
+            ),
+            h('div', { className: 'sd-actions' },
+              h('button', {
+                className: 'sd-btn primary', type: 'button',
+                disabled: remoteBusy[item.id] === true,
+                onClick: () => installRemoteSkill(item),
+              }, remoteBusy[item.id] === true ? t('installing') : t('install')),
+            ),
+          )),
+        ) : null,
         h('div', { className: 'sd-markets' },
           visible.map(skill => {
             const state = phase[skill.name]
