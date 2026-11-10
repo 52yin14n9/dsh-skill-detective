@@ -407,6 +407,13 @@ const NEEDS = [
     candidates: ['excel-report'],
   },
   {
+    key: 'art',
+    label: '绘图与插画',
+    keywords: ['二次元', '插画', '立绘', '角色设计', '绘画', '画画', '生图', '文生图', 'ai 绘画', 'ai绘画', '漫画', '头像', 'stable diffusion', 'midjourney', 'lora', '画一个角色', '画个角色'],
+    candidates: [],
+    searchTerms: ['image generation', 'illustration', 'stable diffusion', 'midjourney'],
+  },
+  {
     key: 'ppt',
     label: 'PPT 演示',
     keywords: ['ppt', 'pptx', '演示', '幻灯片', 'slide', '汇报'],
@@ -2142,6 +2149,28 @@ class SkillDetective {
     }
   }
 
+  /** Install the top skills.sh hit for a need that has no bundled candidate. */
+  async installFromRemote(def, step, targetScope, ws, sessionId) {
+    const queries = Array.isArray(def.searchTerms) && def.searchTerms.length > 0 ? def.searchTerms : [def.keywords[0]]
+    for (const query of queries) {
+      if (typeof query !== 'string' || query === '') continue
+      const result = await this.remoteCatalog(query)
+      if (!result.ok || result.skills.length === 0) continue
+      const best = [...result.skills].sort((a, b) => b.installs - a.installs)[0]
+      step('search', '检索 skills.sh', 'ok', `远程命中 ${result.skills.length} 个候选，取「${best.name}」`)
+      const installed = await this.installRemote(best.id, ws, best.skillId)
+      if (!installed.ok) {
+        step(`audit-${best.name}`, '安全审查 / 下载', 'fail', installed.message ?? '远程安装失败')
+        continue
+      }
+      step(`audit-${best.name}`, '安全审查', 'ok', '未命中指令注入 / 混淆执行 / 未知外联')
+      step('download', '下载', 'ok', `${installed.path}（${installed.bytesLabel}）`)
+      step('enable', '装载启用', 'ok', `${installed.name} 已装载`)
+      return installed.name
+    }
+    return null
+  }
+
   async install({ name, need, origin, scope, sessionId, workspace }) {
     const state = await this.state.load()
     const requestedScope = scope === 'global' || scope === 'temp' || scope === 'workspace' ? scope : null
@@ -2189,8 +2218,13 @@ class SkillDetective {
       .sort((a, b) => b.installs - a.installs)
 
     if (candidates.length === 0) {
-      step('search', '检索 skills.sh', 'fail', '候选列表为空')
-      return { ok: false, steps, error: 'none-found' }
+      // The curated catalog has no fit for this need; ask skills.sh instead.
+      const remoteName = await this.installFromRemote(def, step, targetScope, ws, sessionId)
+      if (remoteName === null) {
+        step('search', '检索 skills.sh', 'fail', '内置目录与 skills.sh 都没有合适候选')
+        return { ok: false, steps, error: 'none-found' }
+      }
+      return { ok: true, steps, name: remoteName, label: needLabel, remote: true }
     }
 
     step('search', '检索 skills.sh', 'ok', `按安装量排序，命中 ${candidates.length} 个候选`)
