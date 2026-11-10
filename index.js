@@ -1015,6 +1015,11 @@ class StateStore {
         skill: typeof record.skill === 'string' ? record.skill : '',
       }
     }
+    const sessionsRaw = state.sessions && typeof state.sessions === 'object' ? state.sessions : {}
+    const sessions = {}
+    for (const [id, value] of Object.entries(sessionsRaw)) {
+      if (typeof id === 'string' && id !== '' && value === true) sessions[id] = true
+    }
     const deletedRaw = state.deleted && typeof state.deleted === 'object' ? state.deleted : {}
     const deleted = {}
     for (const [name, value] of Object.entries(deletedRaw)) {
@@ -1074,6 +1079,7 @@ class StateStore {
           : [],
       },
       installs,
+      sessions,
       suppressed,
       deleted,
       discovered,
@@ -2704,15 +2710,22 @@ class SkillDetective {
   }
 
   /** Record association between a workspace session and the panel choice. */
-  setCheckbox(sessionId, enabled) {
+  async setCheckbox(sessionId, enabled) {
     if (typeof sessionId !== 'string' || sessionId === '') return { ok: false }
     if (enabled) this.sessions.set(sessionId, true)
     else this.sessions.delete(sessionId)
+    await this.state.update(data => {
+      const next = {}
+      for (const key of this.sessions.keys()) next[key] = true
+      data.sessions = next
+    })
     return { ok: true }
   }
 
   checkbox(sessionId) {
-    return sessionId ? this.sessions.has(sessionId) : false
+    if (typeof sessionId !== 'string' || sessionId === '') return false
+    if (this.state.data?.sessions?.[sessionId] === true) return true
+    return this.sessions.has(sessionId)
   }
 
   /** Called from the session event feed for every committed user message. */
@@ -2724,6 +2737,7 @@ class SkillDetective {
     // also appends user-role context messages (runtime context, skill catalog)
     // that must never be analysed.
     if (sourceKind !== undefined && sourceKind !== 'user') return
+    await this.state.load()
     if (!this.checkbox(sessionId)) return
     if (text.trim() === '') return
     if (text.trim().startsWith('/')) return
@@ -3049,9 +3063,10 @@ export function apply(ctx) {
 
           if (method === 'GET' && route === '/checkbox') {
             const sessionId = url.searchParams.get('sessionId') ?? ''
+            await service.state.load()
             return sendJson(res, 200, {
               ok: true,
-              known: service.sessions.has(sessionId),
+              known: service.checkbox(sessionId),
               enabled: service.checkbox(sessionId),
             })
           }
@@ -3106,7 +3121,7 @@ export function apply(ctx) {
           }
 
           if (route === '/checkbox') {
-            return sendJson(res, 200, service.setCheckbox(String(body.sessionId ?? ''), body.enabled === true))
+            return sendJson(res, 200, await service.setCheckbox(String(body.sessionId ?? ''), body.enabled === true))
           }
 
           if (route === '/dismiss') {
