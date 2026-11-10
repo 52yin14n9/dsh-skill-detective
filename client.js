@@ -587,8 +587,14 @@ window.__ModuleLoader__.load({
     ], size)
 
     const iconGear = size => svg([
-      h('circle', { key: 'c', cx: 8, cy: 8, r: 2.2 }),
-      h('path', { key: 'p', d: 'M8 2.2v1.4M8 12.4v1.4M2.2 8h1.4M12.4 8h1.4M4 4l1 1M11 11l1 1M12 4l-1 1M5 11l-1 1' }),
+      h('path', { key: 'a', d: 'M6.6 1.8h2.8l.35 1.8 1.15.66 1.75-.62 1.4 2.42-1.45 1.15v1.34l1.45 1.15-1.4 2.42-1.75-.62-1.15.66-.35 1.8H6.6l-.35-1.8-1.15-.66-1.75.62-1.4-2.42 1.45-1.15V6.41L1.95 5.26l1.4-2.42 1.75.62 1.15-.66z' }),
+      h('circle', { key: 'c', cx: 8, cy: 8, r: 1.7 }),
+    ], size)
+
+    const iconDownload = size => svg([
+      h('path', { key: 'a', d: 'M8 2.6v7.1' }),
+      h('path', { key: 'b', d: 'M4.9 6.6 8 9.9l3.1-3.3' }),
+      h('path', { key: 'c', d: 'M3.4 12.6h9.2' }),
     ], size)
 
     const iconLearn = size => svg([
@@ -1921,7 +1927,7 @@ window.__ModuleLoader__.load({
               className: 'sd-toplink', type: 'button', onClick: rescan, disabled: scanning,
               title: t('scanHint'),
             }, iconRefresh(15), scanning ? t('scanning') : t('scanNow')),
-            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setUpdatesOpen(true) }, iconRefresh(15), t('updatesTitle')),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setUpdatesOpen(true) }, iconDownload(15), t('updatesTitle')),
             h('button', { className: 'sd-toplink', type: 'button', onClick: () => setSettingsOpen(true) }, iconGear(15), t('settings')),
             h('button', { className: 'sd-toplink', type: 'button', onClick: openRoot }, iconFolder(15), t('openDir')),
           ),
