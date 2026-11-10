@@ -430,6 +430,7 @@ window.__ModuleLoader__.load({
 .sd-ver { font-size: 11px; color: #7a7f88; }
 .sd-badge { font-size: 11px; padding: 1px 7px; border-radius: 4px; background: #1c2230; color: #7aaaff; }
 .sd-badge.grey { background: #23252a; color: #8b8f98; }
+.sd-desc { color: #9aa0a8; font-size: 12px; line-height: 1.55; margin: 3px 0 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 680px; }
 .sd-meta { color: #9a9fa8; font-size: 12.5px; margin-top: 4px; }
 .sd-subline { color: #7a7f88; font-size: 12px; margin-top: 3px; }
 .sd-subline.warn { color: #c9a96a; }
@@ -1021,6 +1022,9 @@ window.__ModuleLoader__.load({
             h('span', { className: 'sd-ver' }, `v${skill.version}`),
             h('span', { className: `sd-badge${meta.badge ? ` ${meta.badge}` : ''}` }, t(meta.labelKey)),
           ),
+          skill.description
+            ? h('div', { className: 'sd-desc', title: skill.description }, skill.description)
+            : null,
           h('div', { className: 'sd-meta' }, metaParts.join(' · ')),
           sourceLine ? h('div', { className: 'sd-subline' }, sourceLine) : null,
           h('div', { className: `sd-subline${skill.permWarn ? ' warn' : ''}` }, `最高权限：${skill.permLabel}`),
