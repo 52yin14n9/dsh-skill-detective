@@ -144,7 +144,8 @@ window.__ModuleLoader__.load({
       suppressedEmpty: '暂无',
       restore: '恢复',
       replaceAsk: '需要同类技能替代',
-      replaceHint: '勾选后自动查找同功能、安装量最高且尚未安装的同类技能并安装',
+      replaceHint: '点击后自动查找同功能、安装量最高且尚未安装的同类技能并安装',
+      replaceSearching: '正在查找同类技能…',
       replacing: '查找中…',
       replaceInstalled: '已安装同类技能 {name}',
       replaceNone: '未找到同类技能',
@@ -292,6 +293,7 @@ window.__ModuleLoader__.load({
       restore: 'Restore',
       replaceAsk: 'Replace with a peer',
       replaceHint: 'Finds the most installed peer of the same task that is not installed yet',
+      replaceSearching: 'Searching peers…',
       replacing: 'Searching…',
       replaceInstalled: 'Installed peer {name}',
       replaceNone: 'No peer found',
@@ -454,6 +456,13 @@ window.__ModuleLoader__.load({
 .sd-replace:hover { border-color: rgba(201,169,106,.6); background: rgba(201,169,106,.1); }
 .sd-replace:disabled { opacity: .6; cursor: default; }
 .sd-checkbox { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; flex: 0 0 14px; }
+.sd-status-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 95; pointer-events: none; }
+.sd-status { display: flex; align-items: center; gap: 11px; min-width: 220px; padding: 15px 24px; border-radius: 12px; background: rgba(20,20,23,.94); border: 1px solid rgba(255,255,255,.13); box-shadow: 0 18px 52px rgba(0,0,0,.55); color: #e8e8ea; font-size: 13.5px; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); animation: sd-in .16s ease-out; }
+.sd-status.none { color: #c9a96a; border-color: rgba(201,169,106,.34); }
+.sd-status.ok { color: #35e0d2; border-color: rgba(53,224,210,.34); }
+.sd-status-icon { font-size: 15px; line-height: 1; }
+.sd-spin { width: 15px; height: 15px; flex: 0 0 15px; border-radius: 50%; border: 2px solid rgba(201,169,106,.25); border-top-color: #c9a96a; animation: sd-spin .7s linear infinite; }
+@keyframes sd-spin { to { transform: rotate(360deg); } }
 .sd-dim { opacity: .45; }
 .sd-learn-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
 .sd-learn-list { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; padding-right: 4px; }
@@ -1537,6 +1546,7 @@ window.__ModuleLoader__.load({
       const [updatesOpen, setUpdatesOpen] = useState(false)
       const [busy, setBusy] = useState(false)
       const [replacing, setReplacing] = useState('')
+      const [replaceStatus, setReplaceStatus] = useState(null)
       const [toasts, pushToast] = useToasts()
 
       const load = useCallback(() => {
@@ -1623,14 +1633,25 @@ window.__ModuleLoader__.load({
       const replaceSkill = async skill => {
         if (replacing !== '') return
         setReplacing(skill.name)
+        setReplaceStatus({ kind: 'loading', text: t('replaceSearching') })
+        const started = Date.now()
+        // Always keep the spinner visible for at least 300ms so the result never
+        // flashes in before the user reads the loading state.
+        const settle = async () => {
+          const rest = 300 - (Date.now() - started)
+          if (rest > 0) await new Promise(resolve => setTimeout(resolve, rest))
+        }
         try {
           const result = await api('/replace', { body: { name: skill.name, workspace } })
-          pushToast(t('replaceInstalled', { name: result.name }))
+          await settle()
+          setReplaceStatus({ kind: 'ok', text: t('replaceInstalled', { name: result.name }) })
           load()
         } catch (err) {
-          pushToast(err.message)
+          await settle()
+          setReplaceStatus({ kind: 'none', text: err.message || t('replaceNone') })
         } finally {
           setReplacing('')
+          setTimeout(() => setReplaceStatus(null), 1900)
         }
       }
 
@@ -1812,6 +1833,14 @@ window.__ModuleLoader__.load({
           onClose: () => setUpdatesOpen(false),
           onInstalled: load,
         }) : null,
+        replaceStatus ? h('div', { className: 'sd-status-wrap' },
+          h('div', { className: `sd-status ${replaceStatus.kind}` },
+            replaceStatus.kind === 'loading'
+              ? h('span', { className: 'sd-spin' })
+              : h('span', { className: 'sd-status-icon' }, replaceStatus.kind === 'ok' ? '✓' : '🐟'),
+            h('span', null, replaceStatus.text),
+          ),
+        ) : null,
         toasts.map(item => h('div', { key: item.id, className: 'sd-toast' }, item.text)),
       )
     }
