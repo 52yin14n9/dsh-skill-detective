@@ -19,7 +19,7 @@
  */
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile, stat, rename, rm, cp } from 'node:fs/promises'
-import { join, resolve, dirname, basename, relative, sep } from 'node:path'
+import { join, resolve, dirname, basename, relative, sep, isAbsolute } from 'node:path'
 import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { EXTRA_CATALOG } from './catalog.js'
@@ -509,7 +509,10 @@ function isSkillName(value) {
 
 function within(root, child) {
   const rel = relative(resolve(root), resolve(child))
-  return rel === '' || (!rel.startsWith('..') && !rel.startsWith(sep) && !resolve(rel).startsWith('..'))
+  // `relative()` returns an absolute path when the two paths are on different
+  // Windows drives; that must count as "outside", never as a child.
+  if (rel === '' || isAbsolute(rel)) return rel === ''
+  return rel !== '..' && !rel.startsWith(`..${sep}`)
 }
 
 function displayPath(root, path) {
@@ -939,6 +942,40 @@ class StateStore {
         group: typeof record.group === 'string' ? record.group : '',
       }
     }
+    // Skills found by the automatic scan: every workspace, `$DSH_HOME/skills`
+    // and the harness registry (bundled plugin skills). Kept in the state file so
+    // the management list survives a restart where the registry is not ready yet.
+    const discoveredRaw = state.discovered && typeof state.discovered === 'object' ? state.discovered : {}
+    const discovered = {}
+    for (const [name, value] of Object.entries(discoveredRaw)) {
+      if (!isSkillName(name)) continue
+      const record = value && typeof value === 'object' ? value : {}
+      if (typeof record.path !== 'string' || typeof record.file !== 'string') continue
+      discovered[name] = {
+        path: record.path,
+        file: record.file,
+        scope: ['global', 'workspace', 'temp', 'bundled'].includes(record.scope) ? record.scope : 'bundled',
+        managed: record.managed !== false,
+        kind: record.kind === 'local' ? 'local' : record.kind === 'inline' ? 'inline' : 'bundled',
+        provider: typeof record.provider === 'string' ? record.provider : '',
+        packageName: typeof record.packageName === 'string' ? record.packageName : '',
+        sourceKind: typeof record.sourceKind === 'string' ? record.sourceKind : '',
+        workspace: typeof record.workspace === 'string' ? record.workspace : null,
+        description: typeof record.description === 'string' ? record.description : '',
+        whenToUse: typeof record.whenToUse === 'string' ? record.whenToUse : '',
+        disabled: record.disabled === true,
+        at: stamp(record.at),
+        firstSeenAt: stamp(record.firstSeenAt ?? record.at),
+      }
+    }
+    const scanRaw = state.scan && typeof state.scan === 'object' ? state.scan : {}
+    const scan = {
+      at: Number.isFinite(scanRaw.at) && scanRaw.at > 0 ? scanRaw.at : 0,
+      reason: typeof scanRaw.reason === 'string' ? scanRaw.reason : '',
+      total: Number.isFinite(scanRaw.total) ? scanRaw.total : 0,
+      roots: Array.isArray(scanRaw.roots) ? scanRaw.roots.filter(item => typeof item === 'string') : [],
+      registry: scanRaw.registry === true,
+    }
     return {
       version: STATE_VERSION,
       settings: {
@@ -954,6 +991,8 @@ class StateStore {
       installs,
       suppressed,
       deleted,
+      discovered,
+      scan,
     }
   }
 
@@ -1052,6 +1091,40 @@ function skillRoots(workspace, extraWorkspaces = []) {
   return roots
 }
 
+/** Reuse a scan snapshot for this long before the panel refreshes it. */
+const SCAN_TTL = 5 * 60_000
+
+/** Which root wins when the same skill name exists in several places. */
+const SCOPE_RANK = { workspace: 0, global: 1, temp: 2, bundled: 3 }
+
+function scopeRank(scope) {
+  return SCOPE_RANK[scope] ?? 4
+}
+
+/** Read one `SKILL.md` and parse its frontmatter; `null` when it is unreadable. */
+async function readSkillFile(file) {
+  let text
+  try {
+    text = await readFile(file, 'utf8')
+  } catch {
+    return null
+  }
+  return { text, meta: parseFrontmatter(text) }
+}
+
+/**
+ * Package that ships a bundled skill, taken from the install path
+ * (`.../node_modules/<pkg>/skills/<name>/SKILL.md`). The registry's provider id
+ * (`aris`) is not the package name (`dsh-aris`), and the panel groups by package.
+ */
+function packageOfPath(file) {
+  if (typeof file !== 'string' || file === '') return ''
+  const parts = resolve(file).split(sep)
+  const index = parts.lastIndexOf('node_modules')
+  if (index >= 0 && index + 1 < parts.length) return parts[index + 1]
+  return ''
+}
+
 async function scanRoot(entry) {
   const out = []
   let dirs
@@ -1064,13 +1137,9 @@ async function scanRoot(entry) {
     if (!dirent.isDirectory() || dirent.name.startsWith('.')) continue
     const dir = join(entry.root, dirent.name)
     const file = join(dir, 'SKILL.md')
-    let text
-    try {
-      text = await readFile(file, 'utf8')
-    } catch {
-      continue
-    }
-    const meta = parseFrontmatter(text)
+    const read = await readSkillFile(file)
+    if (read === null) continue
+    const { meta } = read
     const skillName = isSkillName(meta.name) ? meta.name : dirent.name
     out.push({
       name: skillName,
@@ -1082,6 +1151,10 @@ async function scanRoot(entry) {
       scope: entry.scope,
       workspace: entry.workspace,
       level: entry.level,
+      kind: 'local',
+      managed: true,
+      provider: '',
+      sourceKind: '',
       bytes: await directorySize(dir),
     })
   }
@@ -1166,51 +1239,339 @@ class SkillDetective {
     const scanned = []
     for (const root of roots) scanned.push(...await scanRoot(root))
 
+    // Add the persisted scan snapshot. The current deployment roots are already
+    // covered above; the snapshot contributes the other workspaces and the
+    // bundled provider skills, which never live under a catalog root.
+    const present = new Set(scanned.map(skill => skill.name))
+    for (const [recordName, record] of Object.entries(state.discovered ?? {})) {
+      if (!isSkillName(recordName) || present.has(recordName)) continue
+      // Inline registry skills have no file on disk: the snapshot itself is the
+      // only source of truth for them.
+      if (record.kind === 'inline' || record.file === '') {
+        present.add(recordName)
+        scanned.push({
+          name: recordName,
+          description: record.description ?? '',
+          whenToUse: record.whenToUse ?? '',
+          disabled: record.disabled === true,
+          dir: '',
+          file: '',
+          scope: 'bundled',
+          workspace: undefined,
+          level: 'bundled',
+          kind: 'inline',
+          managed: false,
+          provider: record.provider ?? '',
+          packageName: record.packageName ?? record.provider ?? '',
+          sourceKind: record.sourceKind ?? '',
+          bytes: 0,
+        })
+        continue
+      }
+      const read = await readSkillFile(record.file)
+      if (read === null) continue
+      const skillName = isSkillName(read.meta.name) ? read.meta.name : recordName
+      if (present.has(skillName)) continue
+      present.add(skillName)
+      scanned.push({
+        name: skillName,
+        description: typeof read.meta.description === 'string' ? read.meta.description : '',
+        whenToUse: typeof read.meta.whenToUse === 'string' ? read.meta.whenToUse : '',
+        disabled: read.meta['disable-model-invocation'] === 'true',
+        dir: record.path,
+        file: record.file,
+        scope: record.scope,
+        workspace: record.workspace ?? undefined,
+        level: record.scope === 'bundled' ? 'bundled' : record.scope === 'global' ? 'user-dsh' : 'project-dsh',
+        kind: record.kind,
+        managed: record.managed !== false,
+        provider: record.provider,
+        packageName: record.packageName ?? '',
+        sourceKind: record.sourceKind,
+        bytes: 0,
+      })
+    }
+
     const byName = new Map()
     for (const skill of scanned) {
       const existing = byName.get(skill.name)
-      // project scope outranks user scope, matching the official precedence rank.
-      if (existing === undefined) {
+      // Project scope outranks user scope; bundled skills rank last, matching
+      // the official precedence order of the skill registry.
+      if (existing === undefined || scopeRank(skill.scope) < scopeRank(existing.scope)) {
         byName.set(skill.name, skill)
-        continue
       }
-      if (existing.scope !== 'workspace' && skill.scope === 'workspace') byName.set(skill.name, skill)
     }
 
-    return Array.from(byName.values()).map(skill => {
-      const meta = state.installs[skill.name] ?? null
-      const origin = meta?.origin === 'market'
-        ? 'market'
-        : meta?.origin === 'plugin'
-          ? 'plugin'
-          : meta?.origin === 'learned'
-            ? 'learned'
-            : 'user'
-      const perm = meta?.perm ?? 'files'
-      return {
-        name: skill.name,
-        version: meta?.version ?? '0.1.0',
-        origin,
-        scope: meta?.scope ?? skill.scope,
-        workspace: skill.workspace ?? null,
-        installs: meta?.installs ?? null,
-        author: meta?.author ?? '',
-        category: meta?.category ?? '',
-        source: meta?.source ?? '',
-        description: meta?.description ?? skill.description,
-        whenToUse: skill.whenToUse,
-        perm,
-        permLabel: permLabel(perm).text,
-        permWarn: permLabel(perm).warn,
-        enabled: !skill.disabled,
-        installedAt: meta?.installedAt ?? null,
-        timeLabel: relativeTime(meta?.installedAt),
-        bytes: skill.bytes,
-        sizeLabel: humanBytes(skill.bytes),
-        installsLabel: humanCount(meta?.installs),
-        path: skill.dir,
+    return Array.from(byName.values())
+      .sort((a, b) => scopeRank(a.scope) - scopeRank(b.scope) || a.name.localeCompare(b.name))
+      .map(skill => {
+        const meta = state.installs[skill.name] ?? null
+        const bundled = skill.kind === 'bundled' || skill.kind === 'inline'
+        const origin = bundled
+          ? 'scan'
+          : meta?.origin === 'market'
+            ? 'market'
+            : meta?.origin === 'plugin'
+              ? 'plugin'
+              : meta?.origin === 'learned'
+                ? 'learned'
+                : 'user'
+        const perm = meta?.perm ?? 'files'
+        return {
+          name: skill.name,
+          version: meta?.version ?? '0.1.0',
+          origin,
+          scope: meta?.scope ?? skill.scope,
+          managed: skill.managed !== false,
+          kind: skill.kind,
+          provider: skill.provider ?? '',
+          packageName: skill.packageName ?? '',
+          workspace: skill.workspace ?? null,
+          installs: meta?.installs ?? null,
+          author: meta?.author ?? '',
+          category: meta?.category ?? '',
+          source: meta?.source ?? '',
+          description: meta?.description ?? skill.description,
+          whenToUse: skill.whenToUse,
+          perm,
+          permLabel: permLabel(perm).text,
+          permWarn: permLabel(perm).warn,
+          enabled: !skill.disabled,
+          installedAt: meta?.installedAt ?? null,
+          timeLabel: relativeTime(meta?.installedAt),
+          bytes: skill.bytes,
+          sizeLabel: humanBytes(skill.bytes),
+          installsLabel: humanCount(meta?.installs),
+          path: skill.dir,
+        }
+      })
+  }
+
+  /** Which catalog root a directory belongs to, if any. */
+  locateRoot(dir, workspaces = []) {
+    const target = resolve(dir)
+    if (within(join(DSH_HOME, 'skills'), target)) {
+      return { scope: 'global', managed: true, workspace: undefined }
+    }
+    if (within(join(DSH_HOME, 'skill-detective', 'temp'), target)) {
+      return { scope: 'temp', managed: true, workspace: undefined }
+    }
+    for (const ws of workspaces) {
+      if (typeof ws !== 'string' || ws.trim() === '') continue
+      if (within(join(resolve(ws), '.dsh', 'skills'), target)) {
+        return { scope: 'workspace', managed: true, workspace: resolve(ws) }
       }
+    }
+    return { scope: 'bundled', managed: false, workspace: undefined }
+  }
+
+  /**
+   * Every skill the harness registry can see, including bundled provider skills
+   * (`<plugin>/skills/<name>/SKILL.md`) that no catalog root contains.
+   * Returns `null` when the registry is unavailable, so callers can tell
+   * "registry says none" from "registry is not ready".
+   */
+  async registryEntries() {
+    let registry
+    try {
+      registry = this.ctx.get('skills')
+    } catch {
+      return null
+    }
+    if (!registry || typeof registry.list !== 'function') return null
+
+    const workspaces = this.workspaceList().map(item => item.path)
+    const cwds = []
+    for (const dir of [...workspaces, this.defaultWorkspace()]) {
+      if (typeof dir === 'string' && dir.trim() !== '' && !cwds.includes(resolve(dir))) cwds.push(resolve(dir))
+    }
+
+    const out = []
+    const seen = new Set()
+    for (const cwd of cwds) {
+      let items
+      try {
+        items = await registry.list({ cwd })
+      } catch {
+        continue
+      }
+      if (!Array.isArray(items)) continue
+      for (const item of items) {
+        const name = typeof item?.name === 'string' ? item.name : ''
+        if (!isSkillName(name) || seen.has(name)) continue
+        const provider = typeof item.provider === 'string' ? item.provider : ''
+        const sourceKind = typeof item.source === 'string' ? item.source : ''
+        const file = typeof item?.path === 'string' ? item.path : ''
+        if (file === '') {
+          // Inline provider skill (no SKILL.md on disk): list it, but there is no
+          // file to enable, move or delete.
+          seen.add(name)
+          out.push({
+            name,
+            description: typeof item.description === 'string' ? item.description : '',
+            whenToUse: typeof item.whenToUse === 'string' ? item.whenToUse : '',
+            disabled: item.invocation?.modelInvocable === false,
+            dir: '',
+            file: '',
+            scope: 'bundled',
+            workspace: undefined,
+            level: 'bundled',
+            kind: 'inline',
+            managed: false,
+            provider,
+            packageName: provider,
+            sourceKind,
+            bytes: 0,
+          })
+          continue
+        }
+        if (!existsSync(file)) continue
+        const read = await readSkillFile(file)
+        if (read === null) continue
+        seen.add(name)
+        const located = this.locateRoot(dirname(file), workspaces)
+        out.push({
+          name: isSkillName(read.meta.name) ? read.meta.name : name,
+          description: typeof read.meta.description === 'string' ? read.meta.description : '',
+          whenToUse: typeof read.meta.whenToUse === 'string' ? read.meta.whenToUse : '',
+          disabled: read.meta['disable-model-invocation'] === 'true',
+          dir: dirname(file),
+          file,
+          scope: located.scope,
+          workspace: located.workspace,
+          level: located.managed ? 'project-dsh' : 'bundled',
+          kind: located.managed ? 'local' : 'bundled',
+          managed: located.managed,
+          provider,
+          packageName: packageOfPath(file) || provider,
+          sourceKind,
+          bytes: 0,
+        })
+      }
+    }
+    return out
+  }
+
+  /** Catalog roots scanned by the automatic scan, deduplicated. */
+  scanRoots() {
+    const workspaces = this.workspaceList().map(item => item.path)
+    const defs = []
+    const seen = new Set()
+    const push = (root, scope, workspace) => {
+      const key = resolve(root)
+      if (seen.has(key)) return
+      seen.add(key)
+      defs.push({
+        root: key,
+        scope,
+        workspace,
+        level: scope === 'global' ? 'user-dsh' : scope === 'temp' ? 'temp' : 'project-dsh',
+      })
+    }
+    push(join(DSH_HOME, 'skills'), 'global')
+    for (const dir of workspaces) {
+      if (typeof dir !== 'string' || dir.trim() === '') continue
+      push(join(resolve(dir), '.dsh', 'skills'), 'workspace', resolve(dir))
+    }
+    push(join(DSH_HOME, 'skill-detective', 'temp'), 'temp')
+    return defs
+  }
+
+  /**
+   * Scan the user's workspaces, `$DSH_HOME/skills` and the harness skill
+   * registry, then persist the result as the management list. Runs once when the
+   * plugin loads, after every `skills/change`, and when the panel asks for it.
+   */
+  async scanAll(options = {}) {
+    const reason = typeof options.reason === 'string' && options.reason !== '' ? options.reason : 'manual'
+    const state = await this.state.load()
+    const roots = this.scanRoots()
+    const workspaces = roots.filter(item => item.scope === 'workspace').map(item => item.workspace)
+
+    const found = []
+    for (const def of roots) found.push(...await scanRoot(def))
+
+    const registry = await this.registryEntries()
+    if (registry !== null) for (const entry of registry) found.push(entry)
+
+    // Prefer the most specific root for a duplicated name.
+    const byName = new Map()
+    for (const skill of found) {
+      const current = byName.get(skill.name)
+      if (current === undefined || scopeRank(skill.scope) < scopeRank(current.scope)) byName.set(skill.name, skill)
+    }
+
+    const previous = state.discovered ?? {}
+    const next = {}
+    let added = 0
+    for (const [skillName, skill] of byName) {
+      const prior = previous[skillName]
+      if (prior === undefined) added += 1
+      next[skillName] = {
+        path: skill.dir,
+        file: skill.file,
+        scope: skill.scope,
+        managed: skill.managed !== false,
+        kind: skill.kind === 'local' ? 'local' : skill.kind === 'inline' ? 'inline' : 'bundled',
+        provider: skill.provider ?? '',
+        packageName: skill.packageName ?? '',
+        sourceKind: skill.sourceKind ?? '',
+        workspace: skill.workspace ?? null,
+        description: skill.description ?? '',
+        whenToUse: skill.whenToUse ?? '',
+        disabled: skill.disabled === true,
+        at: Date.now(),
+        firstSeenAt: prior?.firstSeenAt ?? prior?.at ?? Date.now(),
+      }
+    }
+    // Keep the last known bundled entries when the registry is not ready yet:
+    // dropping them would empty the panel on every early request.
+    if (registry === null) {
+      for (const [skillName, record] of Object.entries(previous)) {
+        if (next[skillName] === undefined) next[skillName] = record
+      }
+    }
+
+    const summary = {
+      at: Date.now(),
+      reason,
+      total: Object.keys(next).length,
+      roots: roots.map(def => def.root),
+      registry: registry !== null,
+    }
+    await this.state.update(data => {
+      data.discovered = next
+      data.scan = summary
     })
+    this.log(`skill-detective: scan (${reason}) found ${summary.total} skills, ${added} new`)
+    return {
+      ok: true,
+      added,
+      workspaces: workspaces.length,
+      ...summary,
+      timeLabel: relativeTime(summary.at),
+    }
+  }
+
+  /** Refresh the snapshot when it is missing or older than `threshold`. */
+  async ensureScan(threshold = SCAN_TTL) {
+    const state = await this.state.load()
+    const at = Number(state.scan?.at ?? 0)
+    const age = Date.now() - at
+    const registryReady = state.scan?.registry === true
+    // The registry often becomes available after the plugin has loaded. Retry
+    // every 10s until bundled provider skills are in the snapshot, then keep the
+    // full TTL so opening the panel stays cheap.
+    const effectiveTtl = registryReady ? threshold : Math.min(threshold, 10_000)
+    if (at > 0 && age < effectiveTtl) {
+      return { ok: true, cached: true, ...state.scan, timeLabel: relativeTime(state.scan.at) }
+    }
+    return this.scanAll({ reason: registryReady ? 'refresh' : 'registry-retry' })
+  }
+
+  currentScan() {
+    const scan = this.state.data?.scan ?? { at: 0, reason: '', total: 0, roots: [], registry: false }
+    return { ...scan, timeLabel: relativeTime(scan.at) }
   }
 
   analyzeText(text) {
@@ -1320,7 +1681,7 @@ class SkillDetective {
       const current = topByCategory.get(entry.category)
       if (current === undefined || entry.installs > current.installs) topByCategory.set(entry.category, entry)
     }
-    return installed.map(skill => {
+    return installed.filter(skill => skill.managed !== false).map(skill => {
       const entry = BY_NAME.get(skill.name)
       const category = entry?.category ?? skill.category ?? ''
       const top = topByCategory.get(category)
@@ -1501,6 +1862,7 @@ class SkillDetective {
     const results = []
     for (const skill of installed) {
       if (skill.name.endsWith('-pro')) continue
+      if (skill.managed === false) continue
       try {
         const result = await this.learn(skill.name, workspace)
         results.push({
@@ -1951,6 +2313,9 @@ class SkillDetective {
     const installed = await this.listInstalled(workspace)
     const current = installed.find(item => item.name === name)
     if (current === undefined) throw new Error('技能不存在')
+    // A bundled skill belongs to its plugin package; copying it out would fork
+    // the file the plugin updates, so the scan result is read-only for moves.
+    if (current.managed === false) throw new Error('插件自带的技能不可移动作用域')
 
     const ws = this.normalizeWorkspace(workspace)
     let targets = []
@@ -2024,6 +2389,8 @@ class SkillDetective {
     const installed = await this.listInstalled(this.normalizeWorkspace(workspace ?? ''))
     const target = installed.find(item => item.name === name)
     if (target === undefined) throw new Error('技能不存在')
+    // Never delete a file that belongs to an installed plugin package.
+    if (target.managed === false) throw new Error('插件自带的技能不可删除，请在插件管理器里处理')
     await rm(target.path, { recursive: true, force: true })
     await this.state.update(data => {
       delete data.installs[name]
@@ -2109,6 +2476,22 @@ class SkillDetective {
     const installed = await this.listInstalled(workspace)
     const target = installed.find(item => item.name === name)
     if (target === undefined) throw new Error('技能不存在')
+    const status = !target.enabled
+      ? '已禁用'
+      : target.managed === false
+        ? '插件自带（只读）'
+        : target.origin === 'user'
+          ? '本地'
+          : '已审查'
+    // Inline registry skills have no directory to walk.
+    if (target.path === '') {
+      return {
+        skill: { ...target, installsLabel: target.installsLabel, status },
+        tree: [{ path: target.name, type: 'file', depth: 0 }],
+        preview: '该技能由插件以注册表条目内联提供，没有独立的 SKILL.md 文件，因此不可删除、不可移动作用域。',
+        previewBytes: 0,
+      }
+    }
     const file = join(target.path, 'SKILL.md')
     let content = ''
     try {
@@ -2124,11 +2507,7 @@ class SkillDetective {
       tree.push({ ...entry, path: entry.path, depth: entry.path.split('/').length })
     }
     return {
-      skill: {
-        ...target,
-        installsLabel: target.installsLabel,
-        status: target.enabled ? (target.origin === 'user' ? '本地' : '已审查') : '已禁用',
-      },
+      skill: { ...target, installsLabel: target.installsLabel, status },
       tree,
       preview: content,
       previewBytes: content.length,
@@ -2347,6 +2726,54 @@ function openInFileManager(path) {
 export function apply(ctx) {
   const service = new SkillDetective(ctx)
 
+  // Automatic discovery: scan the workspaces, `$DSH_HOME/skills` and the skill
+  // registry as soon as the plugin loads, so an installed plugin never shows an
+  // empty management page while the same skills are live in the conversation.
+  ctx.effect(() => {
+    const timers = new Set()
+    const later = (fn, ms) => {
+      const timer = setTimeout(() => {
+        timers.delete(timer)
+        fn()
+      }, ms)
+      timers.add(timer)
+    }
+    const attempt = async round => {
+      try {
+        const result = await service.scanAll({ reason: round === 0 ? 'install' : 'registry-retry' })
+        // The skills service can be installed after this bundle; retry a few
+        // times so bundled plugin skills are picked up without a restart.
+        if (result.registry !== true && round < 3) later(() => { attempt(round + 1) }, 2000 * (round + 1))
+      } catch (error) {
+        service.log(`skill-detective: initial scan failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    later(() => { attempt(0) }, 1200)
+    return () => {
+      for (const timer of timers) clearTimeout(timer)
+      timers.clear()
+    }
+  }, 'skill-detective: initial skill scan')
+
+  // Re-scan shortly after any install / delete / toggle, coalescing bursts.
+  ctx.effect(() => {
+    let timer = null
+    const schedule = () => {
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = null
+        service.scanAll({ reason: 'skills-change' }).catch(error => {
+          service.log(`skill-detective: rescan failed: ${error instanceof Error ? error.message : String(error)}`)
+        })
+      }, 2000)
+    }
+    const off = typeof ctx.on === 'function' ? ctx.on('skills/change', schedule) : undefined
+    return () => {
+      if (typeof off === 'function') off()
+      if (timer !== null) clearTimeout(timer)
+    }
+  }, 'skill-detective: rescan on skills change')
+
   // Session event feed: detect a committed user message while the checkbox is on.
   ctx.effect(() => ctx.on('session/event', (session, event) => {
     if (!event || event.type !== 'user/message') return
@@ -2368,6 +2795,13 @@ export function apply(ctx) {
         try {
           if (method === 'GET' && route === '/state') {
             const workspace = service.normalizeWorkspace(url.searchParams.get('workspace') ?? '')
+            // Opening the panel must never show an empty list only because the
+            // first automatic scan has not finished yet.
+            try {
+              await service.ensureScan()
+            } catch (error) {
+              service.log(`skill-detective: refresh before state failed: ${error instanceof Error ? error.message : String(error)}`)
+            }
             const state = await service.state.load()
             const installed = await service.listInstalled(workspace)
             return sendJson(res, 200, {
@@ -2377,6 +2811,7 @@ export function apply(ctx) {
               dshHome: DSH_HOME,
               settings: state.settings,
               installed,
+              scan: service.currentScan(),
               suppressed: service.suppressedList(),
               deleted: service.deletedList(),
             })
@@ -2458,6 +2893,10 @@ export function apply(ctx) {
           }
 
           const body = await readJsonBody(req)
+
+          if (route === '/scan') {
+            return sendJson(res, 200, await service.scanAll({ reason: 'manual' }))
+          }
 
           if (route === '/checkbox') {
             return sendJson(res, 200, service.setCheckbox(String(body.sessionId ?? ''), body.enabled === true))

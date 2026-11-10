@@ -29,6 +29,8 @@ window.__ModuleLoader__.load({
     const NS = 'dsh-skill-detective'
     /** Marketplace cards rendered per batch. */
     const MARKET_PAGE_SIZE = 12
+    /** A scanned provider with at least this many skills is folded into one row. */
+    const BUNDLE_THRESHOLD = 5
 
     /* ---------------------------------------------------------------- */
     /* Locale                                                            */
@@ -185,6 +187,23 @@ window.__ModuleLoader__.load({
       retry: '再找一次',
       algorithm: '按安装量排序',
       marketInstalling: '正在安装 {name}',
+      scanOrigin: '本地扫描',
+      groupScan: '本地扫描',
+      statScan: '本地扫描 {n}',
+      scanNow: '重新扫描',
+      scanning: '扫描中…',
+      scanDone: '扫描完成：共 {n} 个，新增 {m} 个',
+      scanFailed: '扫描失败：',
+      scanNever: '尚未扫描',
+      scanInfo: '上次扫描 {time} · 共 {n} 个',
+      scanHint: '启动时自动扫描全部工作区、$DSH_HOME/skills 与插件自带的 skills 目录',
+      scopeBundled: '插件自带',
+      bundledBadge: '只读',
+      bundledHint: '插件自带的技能：可查看与启停，删除和作用域移动已禁用',
+      scanPath: '扫描位置',
+      bundleTitle: '{provider} 插件内 skill',
+      bundleReadonly: '只读 · 插件自带',
+      bundleCount: '{n} 个',
     }
 
     const en = {
@@ -338,6 +357,23 @@ window.__ModuleLoader__.load({
       retry: 'Search again',
       algorithm: 'sorted by installs',
       marketInstalling: 'Installing {name}',
+      scanOrigin: 'Scanned',
+      groupScan: 'Scanned locally',
+      statScan: 'scanned {n}',
+      scanNow: 'Rescan',
+      scanning: 'Scanning…',
+      scanDone: 'Scan complete: {n} total, {m} new',
+      scanFailed: 'Scan failed: ',
+      scanNever: 'Not scanned yet',
+      scanInfo: 'Scanned {time} · {n} skills',
+      scanHint: 'Scans every workspace, $DSH_HOME/skills and bundled plugin skill folders on load',
+      scopeBundled: 'Bundled',
+      bundledBadge: 'Read-only',
+      bundledHint: 'Bundled with a plugin: view and toggle are allowed, delete and scope moves are disabled',
+      scanPath: 'Scan locations',
+      bundleTitle: '{provider} plugin skills',
+      bundleReadonly: 'read-only · bundled',
+      bundleCount: '{n}',
     }
 
     function interpolate(text, vars) {
@@ -377,6 +413,14 @@ window.__ModuleLoader__.load({
 .sd-chip.on { background: rgba(255,255,255,.16); color: #ffffff; border-color: rgba(255,255,255,.3); }
 .sd-group { padding-top: 6px; }
 .sd-group-title { color: #a9adb5; font-size: 12.5px; letter-spacing: .3px; padding: 10px 2px 10px; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
+.sd-bundle { margin-bottom: 12px; }
+.sd-bundle-head { display: flex; align-items: center; gap: 9px; width: 100%; box-sizing: border-box; padding: 11px 14px; border-radius: 11px; border: 1px dashed rgba(255,255,255,.14); background: rgba(12,13,16,.38); color: #cfd2d8; font-size: 13px; cursor: pointer; text-align: left; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.sd-bundle-head:hover { background: rgba(255,255,255,.09); color: #ffffff; }
+.sd-caret { display: inline-block; width: 12px; flex: 0 0 12px; color: #7a7f88; transition: transform .15s ease; font-size: 11px; }
+.sd-caret.open { transform: rotate(90deg); color: #7aaaff; }
+.sd-bundle-title { font-weight: 600; }
+.sd-bundle-hint { color: #6d727b; font-size: 11.5px; margin-left: auto; }
+.sd-bundle-items { padding-top: 10px; }
 .sd-row { display: flex; align-items: center; gap: 16px; background: rgba(20,20,23,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 14px rgba(0,0,0,.18); }
 .sd-row.off { opacity: .55; }
 .sd-icon { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 11px; border: 1.5px solid rgba(255,255,255,.82); background: transparent; display: flex; align-items: center; justify-content: center; font-size: 21px; }
@@ -913,27 +957,39 @@ window.__ModuleLoader__.load({
       plugin: { labelKey: 'plugin', badge: '', groupKey: 'groupPlugin' },
       market: { labelKey: 'marketOrigin', badge: '', groupKey: 'groupMarket' },
       learned: { labelKey: 'learned', badge: '', groupKey: 'groupLearned' },
+      scan: { labelKey: 'scanOrigin', badge: 'grey', groupKey: 'groupScan' },
       user: { labelKey: 'user', badge: 'grey', groupKey: 'groupUser' },
     }
 
     function scopeLabel(scope, t) {
       if (scope === 'global') return t('scopeGlobal')
       if (scope === 'temp') return t('scopeTemp')
+      if (scope === 'bundled') return t('scopeBundled')
       return t('scopeWorkspace')
     }
 
     function Row(props) {
       const { skill, t, onDetail, onOpen, onToggle, onAskDelete, onReplace, replacing, deleting, busy } = props
       const meta = ORIGIN_META[skill.origin] ?? ORIGIN_META.user
-      const status = !skill.enabled ? { text: t('disabled'), cls: 'grey' } : skill.origin === 'user' ? { text: t('local'), cls: 'grey' } : { text: t('reviewed'), cls: '' }
+      const managed = skill.managed !== false
+      const status = !skill.enabled
+        ? { text: t('disabled'), cls: 'grey' }
+        : !managed
+          ? { text: t('bundledBadge'), cls: 'grey' }
+          : skill.origin === 'user'
+            ? { text: t('local'), cls: 'grey' }
+            : { text: t('reviewed'), cls: '' }
       const authorText = String(skill.author ?? '')
+      const pluginLabel = skill.packageName || skill.provider || ''
       const sourceLine = skill.origin === 'user'
         ? null
         : skill.origin === 'learned'
           ? `整合自本地同类技能${authorText ? ` · 作者 ${authorText.length > 60 ? `${authorText.slice(0, 60)}…` : authorText}` : ''}`
-          : `${skill.source || `skills.sh/${skill.name}`}${authorText ? ` · 作者 ${authorText}` : ''}`
+          : skill.origin === 'scan'
+            ? `${pluginLabel ? `插件 ${pluginLabel}` : t('scanOrigin')}${skill.path ? ` · ${skill.path}` : ''}`
+            : `${skill.source || `skills.sh/${skill.name}`}${authorText ? ` · 作者 ${authorText}` : ''}`
       const metaParts = [
-        skill.origin === 'user' ? '本地' : skill.origin === 'learned' ? '本地学习' : skill.source ? 'skills.sh' : '',
+        skill.origin === 'user' ? '本地' : skill.origin === 'scan' ? t('scanOrigin') : skill.origin === 'learned' ? '本地学习' : skill.source ? 'skills.sh' : '',
         skill.installs !== null ? `${skill.installsLabel} 安装` : '',
         skill.sizeLabel,
         scopeLabel(skill.scope, t),
@@ -960,7 +1016,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'sd-meta' }, metaParts.join(' · ')),
           sourceLine ? h('div', { className: 'sd-subline' }, sourceLine) : null,
           h('div', { className: `sd-subline${skill.permWarn ? ' warn' : ''}` }, `最高权限：${skill.permLabel}`),
-          !skill.enabled
+          !skill.enabled && managed
             ? h('button', {
               className: 'sd-replace',
               type: 'button',
@@ -976,12 +1032,18 @@ window.__ModuleLoader__.load({
         h('div', { className: 'sd-actions' },
           h('span', { className: `sd-badge${status.cls ? ` ${status.cls}` : ''}` }, status.text),
           h('button', { className: 'sd-iconbtn', type: 'button', title: t('detail'), onClick: () => onDetail(skill) }, iconInfo(15)),
-          h('button', { className: 'sd-iconbtn', type: 'button', title: t('openFolder'), onClick: () => onOpen(skill) }, iconFolder(15)),
-          h('button', {
-            className: 'sd-iconbtn', type: 'button', title: skill.enabled ? t('disable') : t('enable'),
-            disabled: busy, onClick: () => onToggle(skill),
-          }, skill.enabled ? iconMinus(15) : iconPlus(15)),
-          h('button', { className: 'sd-iconbtn danger', type: 'button', title: t('del'), onClick: () => onAskDelete(skill, 'ask') }, iconTrash(15)),
+          skill.path
+            ? h('button', { className: 'sd-iconbtn', type: 'button', title: t('openFolder'), onClick: () => onOpen(skill) }, iconFolder(15))
+            : null,
+          skill.path
+            ? h('button', {
+              className: 'sd-iconbtn', type: 'button', title: skill.enabled ? t('disable') : t('enable'),
+              disabled: busy, onClick: () => onToggle(skill),
+            }, skill.enabled ? iconMinus(15) : iconPlus(15))
+            : null,
+          managed
+            ? h('button', { className: 'sd-iconbtn danger', type: 'button', title: t('del'), onClick: () => onAskDelete(skill, 'ask') }, iconTrash(15))
+            : h('span', { className: 'sd-badge grey', title: t('bundledHint') }, t('bundledBadge')),
         ),
       )
     }
@@ -1017,14 +1079,16 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'sd-overlay', onMouseDown: event => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'sd-modal', role: 'dialog', 'aria-modal': 'true' },
           h('h3', null, name),
-          skill ? h('div', { className: 'sd-muted' }, `v${skill.version} · ${skill.origin === 'user' ? t('user') : skill.origin === 'market' ? t('marketOrigin') : skill.origin === 'learned' ? t('learned') : t('plugin')} · ${scopeLabel(skill.scope, t)}`) : h('div', { className: 'sd-muted' }, '…'),
+          skill ? h('div', { className: 'sd-muted' }, `v${skill.version} · ${skill.origin === 'user' ? t('user') : skill.origin === 'market' ? t('marketOrigin') : skill.origin === 'learned' ? t('learned') : skill.origin === 'scan' ? t('scanOrigin') : t('plugin')} · ${scopeLabel(skill.scope, t)}`) : h('div', { className: 'sd-muted' }, '…'),
           error ? h('div', { style: { color: '#ff8080', fontSize: 12, marginTop: 8 } }, error) : null,
+          skill && skill.managed === false ? h('div', { className: 'sd-hint' }, t('bundledHint')) : null,
           skill ? h('dl', { className: 'sd-kv' },
             h('dt', null, t('source')), h('dd', null, skill.source || '本地'),
             h('dt', null, t('installs')), h('dd', null, skill.installs !== null ? `${skill.installsLabel} 安装` : '—'),
             h('dt', null, t('size')), h('dd', null, skill.sizeLabel),
             h('dt', null, t('scope')), h('dd', null, scopeLabel(skill.scope, t)),
             h('dt', null, t('installedAt')), h('dd', null, skill.installedAt ? new Date(skill.installedAt).toLocaleString() : '—'),
+            h('dt', null, t('scanPath')), h('dd', null, skill.path ?? '—'),
             h('dt', null, t('status')), h('dd', null, skill.status),
             h('dt', null, t('perm')), h('dd', { style: skill.permWarn ? { color: '#c9a96a' } : undefined }, skill.permLabel),
           ) : null,
@@ -1035,9 +1099,9 @@ window.__ModuleLoader__.load({
             h('pre', { className: 'sd-pre' }, data.preview.slice(0, 20000)),
           ) : null,
           h('div', { className: 'sd-modal-foot' },
-            skill ? h('button', { className: 'sd-btn', type: 'button', onClick: () => { onOpen(skill) } }, t('openFolder')) : null,
-            skill ? h('button', { className: 'sd-btn', type: 'button', onClick: () => { onToggle(skill); onClose() } }, skill.enabled ? t('disable') : t('enable')) : null,
-            skill ? h('button', { className: 'sd-btn danger', type: 'button', onClick: () => { onDelete(skill); onClose() } }, t('del')) : null,
+            skill && skill.path ? h('button', { className: 'sd-btn', type: 'button', onClick: () => { onOpen(skill) } }, t('openFolder')) : null,
+            skill && skill.path ? h('button', { className: 'sd-btn', type: 'button', onClick: () => { onToggle(skill); onClose() } }, skill.enabled ? t('disable') : t('enable')) : null,
+            skill && skill.managed !== false ? h('button', { className: 'sd-btn danger', type: 'button', onClick: () => { onDelete(skill); onClose() } }, t('del')) : null,
             h('button', { className: 'sd-btn primary', type: 'button', onClick: onClose }, t('close')),
           ),
         ),
@@ -1051,6 +1115,8 @@ window.__ModuleLoader__.load({
       const [rows, setRows] = useState(() => {
         const map = {}
         for (const skill of data.installed) {
+          // Read-only (bundled / inline) skills have no movable directory.
+          if (skill.managed === false) continue
           map[skill.name] = { scope: skill.scope === 'global' ? 'global' : skill.scope === 'temp' ? 'temp' : 'workspace', workspaces: [data.workspace] }
         }
         return map
@@ -1083,6 +1149,7 @@ window.__ModuleLoader__.load({
         try {
           await api('/settings', { body: { defaultScope } })
           for (const skill of data.installed) {
+            if (skill.managed === false) continue
             const row = rows[skill.name]
             if (row === undefined) continue
             const changed = row.scope !== (skill.scope === 'global' ? 'global' : skill.scope === 'temp' ? 'temp' : 'workspace')
@@ -1117,7 +1184,7 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'sd-h4' }, t('scopeRows')),
           h('div', { className: 'sd-muted', style: { marginBottom: 6 } }, t('scopeRowsHint')),
-          data.installed.map(skill => {
+          data.installed.filter(skill => skill.managed !== false).map(skill => {
             const row = rows[skill.name]
             return h('div', { key: skill.name },
               h('div', { className: 'sd-srow' },
@@ -1623,6 +1690,8 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [replacing, setReplacing] = useState('')
       const [replaceStatus, setReplaceStatus] = useState(null)
+      const [scanning, setScanning] = useState(false)
+      const [openBundles, setOpenBundles] = useState({})
       const [toasts, pushToast] = useToasts()
 
       const load = useCallback(() => {
@@ -1647,7 +1716,7 @@ window.__ModuleLoader__.load({
 
       const installed = useMemo(() => data?.installed ?? [], [data])
       const counts = useMemo(() => {
-        const out = { plugin: 0, market: 0, learned: 0, user: 0 }
+        const out = { plugin: 0, market: 0, learned: 0, scan: 0, user: 0 }
         for (const skill of installed) out[skill.origin] = (out[skill.origin] ?? 0) + 1
         return out
       }, [installed])
@@ -1662,12 +1731,47 @@ window.__ModuleLoader__.load({
       }, [installed, filter, query])
 
       const groups = useMemo(() => {
-        const order = ['plugin', 'market', 'learned', 'user']
+        const order = ['plugin', 'market', 'learned', 'scan', 'user']
         return order.map(origin => ({
           origin,
           items: visible.filter(skill => skill.origin === origin),
         })).filter(group => group.items.length > 0)
       }, [visible])
+
+      // Bundled skills come from plugins: fold a provider with many skills into
+      // one collapsible row so dsh-aris does not push everything else off screen.
+      const scanGroups = useMemo(() => {
+        const byProvider = new Map()
+        for (const skill of visible) {
+          if (skill.origin !== 'scan') continue
+          const key = skill.packageName || skill.provider || '其他插件'
+          if (!byProvider.has(key)) byProvider.set(key, [])
+          byProvider.get(key).push(skill)
+        }
+        const bundles = []
+        const loose = []
+        for (const [provider, items] of byProvider) {
+          if (items.length >= BUNDLE_THRESHOLD) bundles.push({ provider, items })
+          else loose.push(...items)
+        }
+        bundles.sort((a, b) => a.provider.localeCompare(b.provider))
+        loose.sort((a, b) => a.name.localeCompare(b.name))
+        return { bundles, loose }
+      }, [visible])
+
+      const rescan = async () => {
+        if (scanning) return
+        setScanning(true)
+        try {
+          const result = await api('/scan', { body: {} })
+          pushToast(t('scanDone', { n: result.total ?? 0, m: result.added ?? 0 }))
+          load()
+        } catch (err) {
+          pushToast(`${t('scanFailed')}${err.message}`)
+        } finally {
+          setScanning(false)
+        }
+      }
 
       const openFolder = async skill => {
         try {
@@ -1741,6 +1845,20 @@ window.__ModuleLoader__.load({
         }
       }
 
+      const renderRow = skill => h(Row, {
+        key: skill.name,
+        skill,
+        t,
+        busy,
+        replacing,
+        deleting: deleting === skill.name,
+        onDetail: setDetail,
+        onOpen: openFolder,
+        onToggle: toggle,
+        onAskDelete: askDelete,
+        onReplace: replaceSkill,
+      })
+
       const openRoot = async () => {
         try {
           await api('/open-root', { body: { workspace } })
@@ -1793,6 +1911,10 @@ window.__ModuleLoader__.load({
             h('span', { className: 'sd-spacer' }),
             h('button', { className: 'sd-toplink', type: 'button', onClick: () => setView('market') }, iconMarket(15), t('market')),
             h('button', { className: 'sd-toplink', type: 'button', onClick: () => setView('learn') }, iconLearn(15), t('learnTitle')),
+            h('button', {
+              className: 'sd-toplink', type: 'button', onClick: rescan, disabled: scanning,
+              title: t('scanHint'),
+            }, iconRefresh(15), scanning ? t('scanning') : t('scanNow')),
             h('button', { className: 'sd-toplink', type: 'button', onClick: () => setUpdatesOpen(true) }, iconRefresh(15), t('updatesTitle')),
             h('button', { className: 'sd-toplink', type: 'button', onClick: () => setSettingsOpen(true) }, iconGear(15), t('settings')),
             h('button', { className: 'sd-toplink', type: 'button', onClick: openRoot }, iconFolder(15), t('openDir')),
@@ -1806,9 +1928,18 @@ window.__ModuleLoader__.load({
             h('span', { className: 'sep' }, '·'),
             h('span', null, t('statLearned', { n: counts.learned })),
             h('span', { className: 'sep' }, '·'),
+            h('span', null, t('statScan', { n: counts.scan })),
+            h('span', { className: 'sep' }, '·'),
             h('span', null, t('statUser', { n: counts.user })),
             h('span', { className: 'sep' }, '·'),
             h('span', null, t('statRoot')),
+          ),
+          h('div', { className: 'sd-hint', id: 'sd-scan-info' },
+            data?.scan?.at
+              ? t('scanInfo', { time: data.scan.timeLabel, n: data.scan.total })
+              : t('scanNever'),
+            ' · ',
+            t('scanHint'),
           ),
           h('input', {
             className: 'sd-search',
@@ -1818,7 +1949,7 @@ window.__ModuleLoader__.load({
             'aria-label': t('search'),
           }),
           h('div', { className: 'sd-chips' },
-            ['all', 'plugin', 'market', 'learned', 'user'].map(key => h('button', {
+            ['all', 'plugin', 'market', 'learned', 'scan', 'user'].map(key => h('button', {
               key,
               type: 'button',
               className: `sd-chip${filter === key ? ' on' : ''}`,
@@ -1829,7 +1960,9 @@ window.__ModuleLoader__.load({
                 ? t('plugin')
                 : key === 'market'
                   ? t('marketOrigin')
-                  : key === 'learned' ? t('learned') : t('user'))),
+                  : key === 'learned'
+                    ? t('learned')
+                    : key === 'scan' ? t('scanOrigin') : t('user'))),
           ),
           (data?.deleted ?? []).length > 0 ? h('div', { className: 'sd-group' },
             h('div', { className: 'sd-group-title' }, `${t('deletedTitle')} (${(data?.deleted ?? []).length})`),
@@ -1864,24 +1997,40 @@ window.__ModuleLoader__.load({
               ),
             )
             : h(React.Fragment, null,
-              groups.map(group => h('div', { key: group.origin, className: 'sd-group' },
-                filter === 'all'
+              groups.map(group => {
+                const title = filter === 'all'
                   ? h('div', { className: 'sd-group-title' }, `${t(ORIGIN_META[group.origin].groupKey)} (${group.items.length})`)
-                  : null,
-                group.items.map(skill => h(Row, {
-                  key: skill.name,
-                  skill,
-                  t,
-                  busy,
-                  replacing,
-                  deleting: deleting === skill.name,
-                  onDetail: setDetail,
-                  onOpen: openFolder,
-                  onToggle: toggle,
-                  onAskDelete: askDelete,
-                  onReplace: replaceSkill,
-                })),
-              )),
+                  : null
+                if (group.origin !== 'scan') {
+                  return h('div', { key: group.origin, className: 'sd-group' }, title, group.items.map(renderRow))
+                }
+                return h('div', { key: group.origin, className: 'sd-group' },
+                  title,
+                  scanGroups.bundles.map(bundle => {
+                    // Searching inside the page always reveals matches; otherwise a
+                    // folded bundle stays closed until the user opens it.
+                    const open = query.trim() !== '' || openBundles[bundle.provider] === true
+                    return h('div', { key: `bundle-${bundle.provider}`, className: 'sd-bundle' },
+                      h('button', {
+                        className: 'sd-bundle-head',
+                        type: 'button',
+                        'aria-expanded': open,
+                        onClick: () => setOpenBundles(current => ({
+                          ...current,
+                          [bundle.provider]: !current[bundle.provider],
+                        })),
+                      },
+                        h('span', { className: `sd-caret${open ? ' open' : ''}` }, '▸'),
+                        h('span', { className: 'sd-bundle-title' }, t('bundleTitle', { provider: bundle.provider })),
+                        h('span', { className: 'sd-badge grey' }, t('bundleCount', { n: bundle.items.length })),
+                        h('span', { className: 'sd-bundle-hint' }, t('bundleReadonly')),
+                      ),
+                      open ? h('div', { className: 'sd-bundle-items' }, bundle.items.map(renderRow)) : null,
+                    )
+                  }),
+                  scanGroups.loose.map(renderRow),
+                )
+              }),
             ),
         ),
         detail ? h(DetailModal, {
