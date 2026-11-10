@@ -52,6 +52,7 @@ window.__ModuleLoader__.load({
       installedN: '已安装 {n} 个',
       statPlugin: '插件安装 {n}',
       statMarket: '市场安装 {n}',
+      statLearned: '技能学习 {n}',
       statUser: '用户自建 {n}',
       statRoot: '本地目录 .dsh/skills',
       groupPlugin: '插件安装',
@@ -108,6 +109,36 @@ window.__ModuleLoader__.load({
       marketSearch: '搜索市场技能…',
       loadMore: '加载更多（已显示 {shown} / {total}）',
       allLoaded: '已全部加载（共 {n} 个）',
+      learned: '技能学习',
+      groupLearned: '技能学习',
+      learnTitle: '技能学习',
+      learnHint: '选一个技能，本鱼找同类技能、对比优缺点并整合成一份新技能。整合稿先过安全审查，未通过不写盘。',
+      learnPick: '选择要学习的技能',
+      analyzePeers: '分析同类',
+      analyzing: '分析中…',
+      peersTitle: '同类技能',
+      mergedTitle: '整合稿预览',
+      authorsTitle: '作者',
+      authorsMore: '+{n} 位作者',
+      authorDetail: '作者详情',
+      generateMerged: '生成整合版并安装',
+      generating: '生成中…',
+      noPeers: '未查找到同类skill',
+      learnAll: '一键学习已有技能',
+      learnAllRunning: '批量学习中…',
+      learnAllDone: '完成：学习 {n} 个，跳过 {m} 个',
+      updatesTitle: '检查更新',
+      updatesHint: '对比市场目录的安装量与版本，判断是否有同类上位替代',
+      checking: '检查中…',
+      updateLatest: '已是最优',
+      updateNewer: '可更新到 {v}',
+      updateBetter: '有上位替代：{name}',
+      installAlt: '安装替代',
+      noUpdates: '没有可检查的技能',
+      learnedOk: '已生成 {name}',
+      matchScore: '匹配度',
+      sourceAuthors: '来源作者',
+      auditFailed: '整合稿未通过安全审查，已阻止安装',
       reviewPass: '审查通过',
       deleted: '已删除 {name}',
       toastDisabled: '已禁用 {name}',
@@ -153,6 +184,7 @@ window.__ModuleLoader__.load({
       installedN: '{n} installed',
       statPlugin: 'plugin {n}',
       statMarket: 'market {n}',
+      statLearned: 'learned {n}',
       statUser: 'user {n}',
       statRoot: 'local .dsh/skills',
       groupPlugin: 'Plugin installs',
@@ -209,6 +241,36 @@ window.__ModuleLoader__.load({
       marketSearch: 'Search the marketplace…',
       loadMore: 'Load more ({shown} / {total} shown)',
       allLoaded: 'All loaded ({n} skills)',
+      learned: 'Learned',
+      groupLearned: 'Learned skills',
+      learnTitle: 'Skill learning',
+      learnHint: 'Pick one skill; the host finds same-category peers, compares them and merges them into a new skill. The merged draft is audited before it is written.',
+      learnPick: 'Choose a skill to learn from',
+      analyzePeers: 'Analyze peers',
+      analyzing: 'Analyzing…',
+      peersTitle: 'Same-category skills',
+      mergedTitle: 'Merged draft',
+      authorsTitle: 'Authors',
+      authorsMore: '+{n} more',
+      authorDetail: 'All authors',
+      generateMerged: 'Build and install',
+      generating: 'Building…',
+      noPeers: 'No same-category skill found',
+      learnAll: 'Learn all installed skills',
+      learnAllRunning: 'Learning…',
+      learnAllDone: 'Done: {n} learned, {m} skipped',
+      updatesTitle: 'Check updates',
+      updatesHint: 'Compare installed skills with the marketplace catalog for newer versions or stronger alternatives',
+      checking: 'Checking…',
+      updateLatest: 'Up to date',
+      updateNewer: 'Update to {v}',
+      updateBetter: 'Stronger peer: {name}',
+      installAlt: 'Install',
+      noUpdates: 'No skills to check',
+      learnedOk: 'Created {name}',
+      matchScore: 'match',
+      sourceAuthors: 'Source authors',
+      auditFailed: 'Merged draft failed the security audit; install blocked',
       reviewPass: 'Audit passed',
       deleted: 'Deleted {name}',
       toastDisabled: 'Disabled {name}',
@@ -250,116 +312,143 @@ window.__ModuleLoader__.load({
     /* ---------------------------------------------------------------- */
 
     const CSS = `
-.sd-root { color: #e8e8ea; font-size: 13px; line-height: 1.55; }
+.sd-root { color: #e8e8ea; font-size: 14px; line-height: 1.6; }
 .sd-page { width: 100%; height: 100%; min-height: 0; flex: 1 1 auto; box-sizing: border-box; overflow-y: auto; background: transparent; }
-.sd-page-inner { max-width: 1040px; margin: 0 auto; padding: 18px 28px 56px; }
-.sd-topbar { display: flex; align-items: center; gap: 10px; padding: 6px 0 18px; }
-.sd-back { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #8b8f98; cursor: pointer; }
+.sd-page-inner { max-width: 1080px; margin: 0 auto; padding: 22px 32px 60px; }
+.sd-topbar { display: flex; align-items: center; gap: 10px; padding: 4px 0 20px; }
+.sd-back { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #8b8f98; cursor: pointer; }
 .sd-back:hover { background: rgba(255,255,255,.06); color: #e8e8ea; }
-.sd-title { font-size: 17px; font-weight: 600; letter-spacing: .2px; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
-.sd-sub { color: #a9adb5; font-size: 12px; margin-left: 2px; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.sd-title { font-size: 19px; font-weight: 600; letter-spacing: .2px; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+.sd-sub { color: #a9adb5; font-size: 13px; margin-left: 2px; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 .sd-spacer { flex: 1; }
-.sd-toplink { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; border: none; background: transparent; color: #8b8f98; font-size: 12px; cursor: pointer; }
-.sd-toplink:hover { background: rgba(255,255,255,.06); color: #e8e8ea; }
-.sd-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #cfd2d8; font-size: 12px; padding: 7px 11px; margin: 0 0 14px; border-radius: 9px; background: rgba(8,9,12,.42); border: 1px solid rgba(255,255,255,.06); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.sd-toplink { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid rgba(255,255,255,.1); background: rgba(12,13,16,.42); color: #cfd2d8; font-size: 13px; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.sd-toplink:hover { background: rgba(255,255,255,.12); color: #ffffff; }
+.sd-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; color: #cfd2d8; font-size: 12.5px; padding: 8px 12px; margin: 0 0 16px; border-radius: 9px; background: rgba(8,9,12,.42); border: 1px solid rgba(255,255,255,.06); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 .sd-stats b { color: #e8e8ea; font-weight: 600; }
 .sd-stats .sep { color: #3a3d44; }
-.sd-search { width: 100%; height: 34px; border-radius: 9px; background: rgba(18,19,22,.58); border: 1px solid rgba(255,255,255,.09); color: #e8e8ea; padding: 0 12px; font-size: 12.5px; outline: none; box-sizing: border-box; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.sd-search { width: 100%; height: 40px; border-radius: 10px; background: rgba(18,19,22,.58); border: 1px solid rgba(255,255,255,.09); color: #e8e8ea; padding: 0 14px; font-size: 13.5px; outline: none; box-sizing: border-box; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .sd-search::placeholder { color: #5d6169; }
 .sd-search:focus { border-color: rgba(53,224,210,.5); }
-.sd-chips { display: flex; gap: 8px; padding: 12px 0 16px; flex-wrap: wrap; }
-.sd-chip { height: 26px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); background: rgba(8,9,12,.34); color: #cfd2d8; font-size: 12px; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.sd-chips { display: flex; gap: 8px; padding: 14px 0 18px; flex-wrap: wrap; }
+.sd-chip { height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); background: rgba(8,9,12,.34); color: #cfd2d8; font-size: 12.5px; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 .sd-chip:hover { color: #ffffff; border-color: rgba(255,255,255,.28); }
 .sd-chip.on { background: rgba(255,255,255,.16); color: #ffffff; border-color: rgba(255,255,255,.3); }
 .sd-group { padding-top: 6px; }
-.sd-group-title { color: #a9adb5; font-size: 11.5px; letter-spacing: .3px; padding: 10px 2px 8px; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
-.sd-row { display: flex; align-items: center; gap: 14px; background: rgba(20,20,23,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 14px rgba(0,0,0,.18); }
+.sd-group-title { color: #a9adb5; font-size: 12.5px; letter-spacing: .3px; padding: 10px 2px 10px; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
+.sd-row { display: flex; align-items: center; gap: 16px; background: rgba(20,20,23,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 14px rgba(0,0,0,.18); }
 .sd-row.off { opacity: .55; }
-.sd-icon { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 10px; border: 1.5px solid rgba(255,255,255,.82); background: transparent; display: flex; align-items: center; justify-content: center; font-size: 19px; }
+.sd-icon { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 11px; border: 1.5px solid rgba(255,255,255,.82); background: transparent; display: flex; align-items: center; justify-content: center; font-size: 21px; }
 .sd-main { min-width: 0; flex: 1; }
 .sd-name-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sd-name { font-weight: 600; font-size: 13.5px; color: #e8e8ea; }
-.sd-ver { font-size: 10.5px; color: #5d6169; }
-.sd-badge { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: #1c2230; color: #7aaaff; }
+.sd-name { font-weight: 600; font-size: 15px; color: #e8e8ea; }
+.sd-ver { font-size: 11px; color: #7a7f88; }
+.sd-badge { font-size: 11px; padding: 1px 7px; border-radius: 4px; background: #1c2230; color: #7aaaff; }
 .sd-badge.grey { background: #23252a; color: #8b8f98; }
-.sd-meta { color: #8b8f98; font-size: 11.5px; margin-top: 3px; }
-.sd-subline { color: #5d6169; font-size: 11px; margin-top: 2px; }
+.sd-meta { color: #9a9fa8; font-size: 12.5px; margin-top: 4px; }
+.sd-subline { color: #7a7f88; font-size: 12px; margin-top: 3px; }
 .sd-subline.warn { color: #c9a96a; }
-.sd-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
-.sd-iconbtn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: #5d6169; border-radius: 7px; cursor: pointer; padding: 0; }
-.sd-iconbtn:hover { background: rgba(255,255,255,.06); color: #e8e8ea; }
+.sd-actions { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.sd-iconbtn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: #7a7f88; border-radius: 8px; cursor: pointer; padding: 0; }
+.sd-iconbtn:hover { background: rgba(255,255,255,.08); color: #e8e8ea; }
 .sd-iconbtn.danger:hover { color: #ff6b6b; background: rgba(255,107,107,.1); }
-.sd-delbar { display: flex; align-items: center; gap: 10px; background: rgba(255,80,80,.08); border: 1px solid rgba(255,80,80,.28); border-radius: 10px; padding: 10px 12px; margin: -2px 0 10px; color: #ff9a9a; font-size: 12px; }
-.sd-btn { height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.09); background: transparent; color: #cfd2d8; font-size: 12px; cursor: pointer; }
-.sd-btn:hover { background: rgba(255,255,255,.06); }
+.sd-delbar { display: flex; align-items: center; gap: 10px; background: rgba(255,80,80,.08); border: 1px solid rgba(255,80,80,.28); border-radius: 10px; padding: 11px 13px; margin: -2px 0 12px; color: #ff9a9a; font-size: 12.5px; }
+.sd-btn { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03); color: #cfd2d8; font-size: 12.5px; cursor: pointer; }
+.sd-btn:hover { background: rgba(255,255,255,.1); }
 .sd-btn.primary { border: none; background: linear-gradient(135deg, #35e0d2, #7aaaff); color: #06121a; font-weight: 600; }
 .sd-btn.danger { border-color: rgba(255,80,80,.4); color: #ff8080; }
-.sd-empty { text-align: center; padding: 64px 0; color: #5d6169; }
-.sd-empty b { display: block; color: #8b8f98; font-size: 14px; margin-bottom: 6px; }
+.sd-empty { text-align: center; padding: 64px 0; color: #7a7f88; }
+.sd-empty b { display: block; color: #a9adb5; font-size: 15px; margin-bottom: 8px; }
 .sd-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.sd-modal { width: 640px; max-width: 100%; max-height: 82vh; overflow-y: auto; background: rgba(18,18,21,.9); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 20px 22px; box-shadow: 0 24px 80px rgba(0,0,0,.6); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
-.sd-modal h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
-.sd-modal .sd-muted { color: #5d6169; font-size: 11.5px; }
-.sd-kv { display: grid; grid-template-columns: 92px 1fr; gap: 8px 12px; padding: 14px 0; border-top: 1px solid rgba(255,255,255,.055); margin-top: 12px; font-size: 12px; }
-.sd-kv dt { color: #5d6169; margin: 0; }
+.sd-modal { width: 680px; max-width: 100%; max-height: 84vh; overflow-y: auto; background: rgba(18,18,21,.9); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 22px 24px; box-shadow: 0 24px 80px rgba(0,0,0,.6); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+.sd-modal h3 { margin: 0 0 4px; font-size: 16.5px; font-weight: 600; }
+.sd-modal .sd-muted { color: #7a7f88; font-size: 12.5px; }
+.sd-kv { display: grid; grid-template-columns: 96px 1fr; gap: 9px 12px; padding: 14px 0; border-top: 1px solid rgba(255,255,255,.055); margin-top: 12px; font-size: 12.5px; }
+.sd-kv dt { color: #7a7f88; margin: 0; }
 .sd-kv dd { margin: 0; color: #cfd2d8; word-break: break-all; }
-.sd-h4 { font-size: 12px; color: #8b8f98; margin: 16px 0 8px; }
-.sd-tree { background: rgba(10,10,13,.55); border: 1px solid rgba(255,255,255,.07); border-radius: 9px; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11.5px; color: #8b8f98; }
+.sd-h4 { font-size: 12.5px; color: #a9adb5; margin: 18px 0 8px; }
+.sd-tree { background: rgba(10,10,13,.55); border: 1px solid rgba(255,255,255,.07); border-radius: 9px; padding: 11px 13px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: #9a9fa8; }
 .sd-tree div { white-space: pre; }
-.sd-pre { background: rgba(10,10,13,.55); border: 1px solid rgba(255,255,255,.07); border-radius: 9px; padding: 12px; max-height: 280px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11.5px; color: #a9adb5; white-space: pre-wrap; }
-.sd-modal-foot { display: flex; gap: 8px; justify-content: flex-end; padding-top: 16px; }
+.sd-pre { background: rgba(10,10,13,.55); border: 1px solid rgba(255,255,255,.07); border-radius: 9px; padding: 12px; max-height: 300px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: #a9adb5; white-space: pre-wrap; }
+.sd-modal-foot { display: flex; gap: 8px; justify-content: flex-end; padding-top: 18px; }
 .sd-radios { display: flex; gap: 10px; }
-.sd-radio { flex: 1; text-align: left; background: rgba(12,13,16,.5); border: 1px solid rgba(255,255,255,.09); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: #cfd2d8; }
+.sd-radio { flex: 1; text-align: left; background: rgba(12,13,16,.5); border: 1px solid rgba(255,255,255,.09); border-radius: 10px; padding: 11px 13px; cursor: pointer; color: #cfd2d8; }
 .sd-radio.on { border-color: rgba(53,224,210,.55); background: rgba(53,224,210,.06); }
-.sd-radio b { display: block; font-size: 12.5px; margin-bottom: 2px; }
-.sd-radio span { color: #5d6169; font-size: 11px; }
-.sd-srow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.045); }
-.sd-srow .nm { flex: 1; font-size: 12.5px; }
-.sd-select { height: 28px; border-radius: 7px; background: rgba(12,13,16,.62); border: 1px solid rgba(255,255,255,.11); color: #cfd2d8; font-size: 11.5px; padding: 0 6px; }
+.sd-radio b { display: block; font-size: 13px; margin-bottom: 3px; }
+.sd-radio span { color: #7a7f88; font-size: 11.5px; }
+.sd-srow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.045); }
+.sd-srow .nm { flex: 1; font-size: 13px; }
+.sd-select { height: 30px; border-radius: 7px; background: rgba(12,13,16,.62); border: 1px solid rgba(255,255,255,.11); color: #cfd2d8; font-size: 12px; padding: 0 6px; }
 .sd-wschips { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0 2px 0; }
-.sd-wschip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(255,255,255,.09); background: transparent; color: #8b8f98; cursor: pointer; }
+.sd-wschip { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.09); background: transparent; color: #8b8f98; cursor: pointer; }
 .sd-wschip.on { background: #1c2230; color: #7aaaff; border-color: rgba(122,170,255,.3); }
 .sd-wschip.dim { opacity: .4; pointer-events: none; }
-.sd-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: rgba(24,25,29,.9); border: 1px solid rgba(255,255,255,.12); color: #e8e8ea; border-radius: 10px; padding: 9px 16px; font-size: 12px; z-index: 80; box-shadow: 0 10px 30px rgba(0,0,0,.5); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
-.sd-markets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.sd-market-search { margin: 0 0 14px; }
-.sd-more-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 0 12px; }
-.sd-more-done { color: #a9adb5; font-size: 12px; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
-.sd-card { background: rgba(20,20,23,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 14px rgba(0,0,0,.18); }
+.sd-toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: rgba(24,25,29,.9); border: 1px solid rgba(255,255,255,.12); color: #e8e8ea; border-radius: 10px; padding: 10px 18px; font-size: 12.5px; z-index: 80; box-shadow: 0 10px 30px rgba(0,0,0,.5); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.sd-markets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.sd-market-search { margin: 0 0 16px; }
+.sd-more-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 0 12px; }
+.sd-more-done { color: #a9adb5; font-size: 12.5px; text-shadow: 0 1px 3px rgba(0,0,0,.75); }
+.sd-card { background: rgba(20,20,23,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 15px; display: flex; flex-direction: column; gap: 9px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 14px rgba(0,0,0,.18); }
 .sd-card-head { display: flex; align-items: center; gap: 10px; }
-.sd-card-name { font-weight: 600; font-size: 13px; }
-.sd-card-desc { color: #8b8f98; font-size: 11.5px; min-height: 34px; }
-.sd-card-foot { display: flex; align-items: center; gap: 8px; color: #5d6169; font-size: 11px; }
+.sd-card-name { font-weight: 600; font-size: 14.5px; }
+.sd-card-desc { color: #9a9fa8; font-size: 12.5px; min-height: 38px; }
+.sd-card-foot { display: flex; align-items: center; gap: 8px; color: #7a7f88; font-size: 12px; }
 .sd-card-foot .sd-btn { margin-left: auto; }
-.sd-cat { font-size: 10px; color: #5d6169; border: 1px solid rgba(255,255,255,.08); border-radius: 4px; padding: 0 5px; }
-.sd-toggle { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,.07); background: transparent; color: #8b8f98; font-size: 11.5px; cursor: pointer; user-select: none; }
+.sd-cat { font-size: 11px; color: #9a9fa8; border: 1px solid rgba(255,255,255,.1); border-radius: 4px; padding: 0 6px; }
+.sd-toggle { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255,255,255,.07); background: transparent; color: #8b8f98; font-size: 12.5px; cursor: pointer; user-select: none; }
 .sd-toggle:hover { border-color: rgba(255,255,255,.14); color: #cfd2d8; }
 .sd-toggle.on { color: #35e0d2; border-color: rgba(53,224,210,.35); background: rgba(53,224,210,.07); }
-.sd-toggle .box { width: 12px; height: 12px; border-radius: 3px; border: 1px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; line-height: 1; }
-.sd-toggle .fish { font-size: 12px; filter: grayscale(1); opacity: .75; }
+.sd-toggle .box { width: 13px; height: 13px; border-radius: 3px; border: 1px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; }
+.sd-toggle .fish { font-size: 13px; filter: grayscale(1); opacity: .75; }
 .sd-toggle.on .fish { filter: none; opacity: 1; }
 .sd-dock { position: fixed; right: 148px; bottom: 132px; z-index: 9999; display: flex; justify-content: flex-end; pointer-events: none; }
 .sd-dock .sd-bubble { pointer-events: auto; }
-.sd-bubble { width: 372px; max-width: calc(100vw - 44px); background: rgba(20,20,23,.92); border: 1px solid rgba(255,255,255,.11); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,.55); padding: 12px 14px; position: relative; animation: sd-in .18s ease-out; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.sd-bubble { width: 380px; max-width: calc(100vw - 44px); background: rgba(20,20,23,.92); border: 1px solid rgba(255,255,255,.11); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,.55); padding: 13px 15px; position: relative; animation: sd-in .18s ease-out; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 @keyframes sd-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .sd-bubble:after { content: ''; position: absolute; right: 34px; bottom: -6px; width: 10px; height: 10px; background: rgba(20,20,23,.92); border-right: 1px solid rgba(255,255,255,.11); border-bottom: 1px solid rgba(255,255,255,.11); transform: rotate(45deg); }
-.sd-bubble-text { font-size: 12.5px; color: #cfd2d8; line-height: 1.6; }
+.sd-bubble-text { font-size: 13px; color: #cfd2d8; line-height: 1.65; }
 .sd-bubble-text em { font-style: normal; color: #35e0d2; }
-.sd-bubble-actions { display: flex; gap: 8px; margin-top: 10px; }
-.sd-pbtn { height: 26px; padding: 0 12px; border-radius: 7px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255,255,255,.1); background: transparent; color: #cfd2d8; }
+.sd-bubble-actions { display: flex; gap: 8px; margin-top: 11px; }
+.sd-pbtn { height: 28px; padding: 0 13px; border-radius: 7px; font-size: 12.5px; cursor: pointer; border: 1px solid rgba(255,255,255,.1); background: transparent; color: #cfd2d8; }
 .sd-pbtn.main { border: none; background: linear-gradient(135deg, #35e0d2, #7aaaff); color: #06121a; font-weight: 600; }
-.sd-steps { display: flex; flex-direction: column; gap: 7px; }
-.sd-step { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: #8b8f98; }
-.sd-step .dot { width: 14px; height: 14px; flex: 0 0 14px; border-radius: 50%; border: 1px solid #3a3d44; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; margin-top: 1px; }
+.sd-steps { display: flex; flex-direction: column; gap: 8px; }
+.sd-step { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: #8b8f98; }
+.sd-step .dot { width: 15px; height: 15px; flex: 0 0 15px; border-radius: 50%; border: 1px solid #3a3d44; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; margin-top: 1px; }
 .sd-step.ok .dot { border-color: rgba(53,224,210,.6); color: #35e0d2; background: rgba(53,224,210,.1); }
 .sd-step.fail .dot { border-color: rgba(255,90,90,.6); color: #ff8080; background: rgba(255,90,90,.1); }
 .sd-step.run .dot { border-color: rgba(122,170,255,.6); color: #7aaaff; }
 .sd-step .lab { color: #cfd2d8; }
-.sd-step .det { color: #5d6169; font-size: 11px; }
+.sd-step .det { color: #7a7f88; font-size: 11.5px; }
 .sd-step.fail .lab { color: #ff9a9a; }
-.sd-done { font-size: 12.5px; color: #35e0d2; display: flex; align-items: center; gap: 6px; }
+.sd-done { font-size: 13px; color: #35e0d2; display: flex; align-items: center; gap: 6px; }
 .sd-dim { opacity: .45; }
-@media (max-width: 980px) { .sd-markets { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+.sd-learn-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+.sd-learn-list { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; padding-right: 4px; }
+.sd-pick { text-align: left; background: rgba(20,20,23,.66); border: 1px solid rgba(255,255,255,.09); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: #cfd2d8; display: flex; align-items: center; gap: 10px; }
+.sd-pick:hover { border-color: rgba(255,255,255,.2); }
+.sd-pick.on { border-color: rgba(53,224,210,.5); background: rgba(53,224,210,.07); }
+.sd-pick .nm { font-size: 13px; font-weight: 600; }
+.sd-pick .meta { color: #7a7f88; font-size: 11.5px; }
+.sd-learn-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.sd-panel { background: rgba(20,20,23,.66); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 14px 16px; }
+.sd-panel h4 { margin: 0 0 10px; font-size: 13.5px; font-weight: 600; color: #e8e8ea; }
+.sd-peer { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+.sd-peer:last-child { border-bottom: none; }
+.sd-peer .nm { font-weight: 600; font-size: 13px; }
+.sd-peer .meta { color: #7a7f88; font-size: 11.5px; }
+.sd-score { margin-left: auto; font-size: 12px; color: #35e0d2; white-space: nowrap; }
+.sd-authors { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sd-author { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: rgba(122,170,255,.1); color: #7aaaff; border: 1px solid rgba(122,170,255,.25); }
+.sd-learn-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.sd-hint { color: #7a7f88; font-size: 12px; line-height: 1.6; }
+.sd-upd-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+.sd-upd-row:last-child { border-bottom: none; }
+.sd-upd-row .nm { font-weight: 600; font-size: 13px; }
+.sd-upd-row .meta { color: #7a7f88; font-size: 11.5px; }
+.sd-tag { font-size: 11px; padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+.sd-tag.ok { background: rgba(53,224,210,.12); color: #35e0d2; }
+.sd-tag.warn { background: rgba(201,169,106,.14); color: #c9a96a; }
+.sd-tag.info { background: #1c2230; color: #7aaaff; }
+@media (max-width: 980px) { .sd-markets { grid-template-columns: repeat(2, minmax(0,1fr)); } .sd-learn-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .sd-markets { grid-template-columns: 1fr; } .sd-page-inner { padding: 14px 16px 48px; } }
 `
 
@@ -401,6 +490,17 @@ window.__ModuleLoader__.load({
     const iconGear = size => svg([
       h('circle', { key: 'c', cx: 8, cy: 8, r: 2.2 }),
       h('path', { key: 'p', d: 'M8 2.2v1.4M8 12.4v1.4M2.2 8h1.4M12.4 8h1.4M4 4l1 1M11 11l1 1M12 4l-1 1M5 11l-1 1' }),
+    ], size)
+
+    const iconLearn = size => svg([
+      h('path', { key: 'a', d: 'M2.6 3.4h5.2v10.2H2.6z' }),
+      h('path', { key: 'b', d: 'M8.2 3.4h5.2v10.2H8.2' }),
+      h('path', { key: 'c', d: 'M4.4 6.2h2M4.4 8.8h2.6M9.8 6.2h2M9.8 8.8h2' }),
+    ], size)
+
+    const iconRefresh = size => svg([
+      h('path', { key: 'a', d: 'M13.2 8A5.2 5.2 0 1 1 11.4 4' }),
+      h('path', { key: 'b', d: 'M13.2 2.4v2.8h-2.8' }),
     ], size)
 
     const iconMarket = size => svg([
@@ -474,7 +574,7 @@ window.__ModuleLoader__.load({
           : undefined
         const message = typeof payload.error === 'string'
           ? (failed?.detail ?? payload.error)
-          : (payload.error?.message ?? `HTTP ${response.status}`)
+          : (payload.error?.message ?? payload.message ?? `HTTP ${response.status}`)
         throw new Error(message)
       }
       return payload
@@ -757,6 +857,7 @@ window.__ModuleLoader__.load({
     const ORIGIN_META = {
       plugin: { labelKey: 'plugin', badge: '', groupKey: 'groupPlugin' },
       market: { labelKey: 'marketOrigin', badge: '', groupKey: 'groupMarket' },
+      learned: { labelKey: 'learned', badge: '', groupKey: 'groupLearned' },
       user: { labelKey: 'user', badge: 'grey', groupKey: 'groupUser' },
     }
 
@@ -770,11 +871,14 @@ window.__ModuleLoader__.load({
       const { skill, t, onDetail, onOpen, onToggle, onAskDelete, deleting, busy } = props
       const meta = ORIGIN_META[skill.origin] ?? ORIGIN_META.user
       const status = !skill.enabled ? { text: t('disabled'), cls: 'grey' } : skill.origin === 'user' ? { text: t('local'), cls: 'grey' } : { text: t('reviewed'), cls: '' }
+      const authorText = String(skill.author ?? '')
       const sourceLine = skill.origin === 'user'
         ? null
-        : `${skill.source || `skills.sh/${skill.name}`}${skill.author ? ` · 作者 ${skill.author}` : ''}`
+        : skill.origin === 'learned'
+          ? `整合自本地同类技能${authorText ? ` · 作者 ${authorText.length > 60 ? `${authorText.slice(0, 60)}…` : authorText}` : ''}`
+          : `${skill.source || `skills.sh/${skill.name}`}${authorText ? ` · 作者 ${authorText}` : ''}`
       const metaParts = [
-        skill.origin === 'user' ? '本地' : skill.source ? 'skills.sh' : '',
+        skill.origin === 'user' ? '本地' : skill.origin === 'learned' ? '本地学习' : skill.source ? 'skills.sh' : '',
         skill.installs !== null ? `${skill.installsLabel} 安装` : '',
         skill.sizeLabel,
         scopeLabel(skill.scope, t),
@@ -846,7 +950,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'sd-overlay', onMouseDown: event => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'sd-modal', role: 'dialog', 'aria-modal': 'true' },
           h('h3', null, name),
-          skill ? h('div', { className: 'sd-muted' }, `v${skill.version} · ${skill.origin === 'user' ? t('user') : skill.origin === 'market' ? t('marketOrigin') : t('plugin')} · ${scopeLabel(skill.scope, t)}`) : h('div', { className: 'sd-muted' }, '…'),
+          skill ? h('div', { className: 'sd-muted' }, `v${skill.version} · ${skill.origin === 'user' ? t('user') : skill.origin === 'market' ? t('marketOrigin') : skill.origin === 'learned' ? t('learned') : t('plugin')} · ${scopeLabel(skill.scope, t)}`) : h('div', { className: 'sd-muted' }, '…'),
           error ? h('div', { style: { color: '#ff8080', fontSize: 12, marginTop: 8 } }, error) : null,
           skill ? h('dl', { className: 'sd-kv' },
             h('dt', null, t('source')), h('dd', null, skill.source || '本地'),
@@ -975,6 +1079,252 @@ window.__ModuleLoader__.load({
             h('button', { className: 'sd-btn primary', type: 'button', disabled: saving, onClick: save }, saving ? t('saving') : t('save')),
           ),
         ),
+      )
+    }
+
+    function UpdatesModal(props) {
+      const { t, workspace, onClose, onInstalled, pushToast } = props
+      const [items, setItems] = useState(null)
+      const [error, setError] = useState('')
+      const [busy, setBusy] = useState({})
+
+      useEffect(() => {
+        let alive = true
+        api(`/updates?workspace=${encodeURIComponent(workspace ?? '')}`)
+          .then(payload => {
+            if (!alive) return
+            setItems(payload.updates)
+            setError('')
+          })
+          .catch(err => {
+            if (alive) setError(err.message)
+          })
+        return () => {
+          alive = false
+        }
+      }, [workspace])
+
+      useEffect(() => {
+        const onKey = event => {
+          if (event.key === 'Escape') onClose()
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+      }, [onClose])
+
+      const install = async name => {
+        setBusy(current => ({ ...current, [name]: true }))
+        try {
+          const result = await api('/install', { body: { name, origin: 'market', workspace } })
+          if (result.ok) {
+            pushToast(`${t('learnedOk', { name: result.name })} ✓`)
+            onInstalled?.()
+          } else {
+            pushToast(t('noneLine'))
+          }
+        } catch (err) {
+          pushToast(err.message)
+        } finally {
+          setBusy(current => ({ ...current, [name]: false }))
+        }
+      }
+
+      return h('div', { className: 'sd-overlay', onMouseDown: event => { if (event.target === event.currentTarget) onClose() } },
+        h('div', { className: 'sd-modal', role: 'dialog', 'aria-modal': 'true' },
+          h('h3', null, t('updatesTitle')),
+          h('div', { className: 'sd-muted' }, t('updatesHint')),
+          error ? h('div', { style: { color: '#ff8080', fontSize: 12.5, marginTop: 10 } }, error) : null,
+          items === null ? h('div', { className: 'sd-hint', style: { padding: '22px 0' } }, t('checking')) : null,
+          items !== null && items.length === 0 ? h('div', { className: 'sd-hint', style: { padding: '22px 0' } }, t('noUpdates')) : null,
+          items !== null && items.length > 0 ? h('div', { style: { marginTop: 12 } }, items.map(item => h('div', { key: item.name, className: 'sd-upd-row' },
+            h('div', { style: { minWidth: 0, flex: 1 } },
+              h('div', { className: 'sd-name-line' },
+                h('span', { className: 'nm' }, item.name),
+                h('span', { className: 'sd-ver' }, `v${item.version}`),
+                h('span', { style: { color: '#7a7f88', fontSize: 11.5 } }, item.category),
+              ),
+              h('div', { className: 'meta' }, [
+                item.installsLabel !== '—' ? `${item.installsLabel} 安装` : '',
+                item.status === 'update' ? t('updateNewer', { v: item.newer }) : '',
+                item.suggestion ? t('updateBetter', { name: item.suggestion.name }) : '',
+              ].filter(Boolean).join(' · ')),
+            ),
+            item.status === 'latest'
+              ? h('span', { className: 'sd-tag ok' }, t('updateLatest'))
+              : item.status === 'update'
+                ? h('span', { className: 'sd-tag warn' }, t('updateNewer', { v: item.newer }))
+                : h('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+                  h('span', { className: 'sd-tag info' }, t('updateBetter', { name: item.suggestion.name })),
+                  item.suggestion && !item.suggestion.installed
+                    ? h('button', {
+                      className: 'sd-btn primary', type: 'button', disabled: busy[item.suggestion.name] === true,
+                      onClick: () => install(item.suggestion.name),
+                    }, busy[item.suggestion.name] === true ? t('installing') : t('installAlt'))
+                    : null,
+                ),
+          ))) : null,
+          h('div', { className: 'sd-modal-foot' },
+            h('button', { className: 'sd-btn primary', type: 'button', onClick: onClose }, t('close')),
+          ),
+        ),
+      )
+    }
+
+    function LearnView(props) {
+      const { t, workspace, installed, onBack, onInstalled, pushToast } = props
+      const [selected, setSelected] = useState('')
+      const [analysis, setAnalysis] = useState(null)
+      const [loading, setLoading] = useState(false)
+      const [error, setError] = useState('')
+      const [building, setBuilding] = useState(false)
+      const [batch, setBatch] = useState(null)
+      const [batchRunning, setBatchRunning] = useState(false)
+      const [authorModal, setAuthorModal] = useState(null)
+      const [showDraft, setShowDraft] = useState(false)
+
+      const analyze = async name => {
+        setSelected(name)
+        setAnalysis(null)
+        setError('')
+        setShowDraft(false)
+        setLoading(true)
+        try {
+          const result = await api('/learn', { body: { name, workspace, dryRun: true } })
+          setAnalysis(result)
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      const build = async () => {
+        if (selected === '') return
+        setBuilding(true)
+        try {
+          const result = await api('/learn', { body: { name: selected, workspace } })
+          pushToast(t('learnedOk', { name: result.name }))
+          onInstalled?.()
+          setAnalysis(null)
+          setSelected('')
+        } catch (err) {
+          pushToast(err.message)
+        } finally {
+          setBuilding(false)
+        }
+      }
+
+      const learnAll = async () => {
+        setBatchRunning(true)
+        setBatch(null)
+        try {
+          const result = await api('/learn-all', { body: { workspace } })
+          setBatch(result)
+          onInstalled?.()
+          pushToast(t('learnAllDone', { n: result.learned, m: result.skipped }))
+        } catch (err) {
+          pushToast(err.message)
+        } finally {
+          setBatchRunning(false)
+        }
+      }
+
+      const authors = analysis?.merged?.authors ?? []
+      const visibleAuthors = authors.slice(0, 3)
+
+      return h('div', { className: 'sd-page-inner' },
+        h('div', { className: 'sd-topbar' },
+          h('button', { className: 'sd-back', type: 'button', title: t('back'), onClick: onBack }, iconBack(16)),
+          h('span', { className: 'sd-title' }, t('learnTitle')),
+          h('span', { className: 'sd-sub' }, t('learnHint')),
+          h('span', { className: 'sd-spacer' }),
+          h('button', { className: 'sd-toplink', type: 'button', disabled: batchRunning, onClick: learnAll },
+            iconMarket(15), batchRunning ? t('learnAllRunning') : t('learnAll')),
+        ),
+        h('div', { className: 'sd-learn-grid' },
+          h('div', null,
+            h('div', { className: 'sd-group-title' }, t('learnPick')),
+            h('div', { className: 'sd-learn-list' },
+              installed.map(skill => h('button', {
+                key: skill.name,
+                type: 'button',
+                className: `sd-pick${selected === skill.name ? ' on' : ''}`,
+                onClick: () => analyze(skill.name),
+              },
+                h('span', { className: 'sd-icon', style: { width: 30, height: 30, flex: '0 0 30px', fontSize: 15, borderRadius: 8 } }, skillEmoji(skill.name)),
+                h('span', { style: { minWidth: 0, textAlign: 'left' } },
+                  h('span', { className: 'nm', style: { display: 'block' } }, skill.name),
+                  h('span', { className: 'meta', style: { display: 'block' } }, `v${skill.version} · ${skill.category || '未分类'}`),
+                ),
+              )),
+              installed.length === 0 ? h('div', { className: 'sd-hint' }, t('emptyHint')) : null,
+            ),
+          ),
+          h('div', { className: 'sd-learn-main' },
+            error !== '' ? h('div', { className: 'sd-panel' }, h('div', { style: { color: '#ff9a9a', fontSize: 13 } }, error)) : null,
+            loading ? h('div', { className: 'sd-panel' }, h('div', { className: 'sd-hint' }, t('analyzing'))) : null,
+            analysis !== null ? h(React.Fragment, null,
+              h('div', { className: 'sd-panel' },
+                h('h4', null, `${t('peersTitle')} · ${analysis.peers.length + 1}`),
+                h('div', { className: 'sd-hint', style: { marginBottom: 8 } }, `${analysis.source.name} · ${analysis.source.author || '—'} · ${analysis.source.category || ''}`),
+                h('div', null, analysis.peers.map(peer => h('div', { key: peer.name, className: 'sd-peer' },
+                  h('div', { style: { minWidth: 0, flex: 1 } },
+                    h('div', { className: 'sd-name-line' },
+                      h('span', { className: 'nm' }, peer.name),
+                      h('span', { className: 'sd-ver' }, `v${peer.version}`),
+                      h('span', { className: `sd-badge${peer.installed ? '' : ' grey'}` }, peer.installed ? t('installed') : peer.author),
+                    ),
+                    h('div', { className: 'meta' }, `${peer.installsLabel} · ${peer.permLabel}${peer.installed ? ' · 已安装' : ''}`),
+                    h('div', { className: 'sd-hint', style: { marginTop: 4 } }, [...peer.pros.map(x => `＋${x}`), ...peer.cons.map(x => `－${x}`)].join('  ')),
+                  ),
+                  h('span', { className: 'sd-score' }, `${t('matchScore')} ${peer.score}`),
+                ))),
+              ),
+              h('div', { className: 'sd-panel' },
+                h('h4', null, t('authorsTitle')),
+                h('div', { className: 'sd-authors' },
+                  visibleAuthors.map(author => h('span', { key: author, className: 'sd-author' }, author)),
+                  authors.length > 3
+                    ? h('button', { className: 'sd-btn', type: 'button', onClick: () => setAuthorModal(authors) }, t('authorsMore', { n: authors.length - 3 }))
+                    : null,
+                ),
+                h('div', { className: 'sd-learn-actions' },
+                  h('button', { className: 'sd-btn', type: 'button', onClick: () => setShowDraft(current => !current) }, showDraft ? t('mergedTitle') + ' ▴' : t('mergedTitle') + ' ▾'),
+                  h('button', {
+                    className: 'sd-btn primary', type: 'button', disabled: building || (analysis.audit && analysis.audit.poison),
+                    onClick: build,
+                  }, building ? t('generating') : t('generateMerged')),
+                ),
+                analysis.audit && analysis.audit.poison
+                  ? h('div', { style: { color: '#ff9a9a', fontSize: 12, marginTop: 8 } }, t('auditFailed'))
+                  : null,
+                showDraft ? h('pre', { className: 'sd-pre', style: { marginTop: 10 } }, analysis.merged.markdown) : null,
+              ),
+            ) : null,
+            batch !== null ? h('div', { className: 'sd-panel' },
+              h('h4', null, t('learnAllDone', { n: batch.learned, m: batch.skipped })),
+              h('div', null, batch.results.map(item => h('div', { key: item.name, className: 'sd-peer' },
+                h('div', { style: { minWidth: 0, flex: 1 } },
+                  h('div', { className: 'sd-name-line' },
+                    h('span', { className: 'nm' }, item.name),
+                    h('span', { className: `sd-tag ${item.ok ? 'ok' : 'warn'}` }, item.ok ? '✓' : '—'),
+                  ),
+                  h('div', { className: 'sd-hint' }, item.ok ? item.target : (item.message || item.code || '')),
+                ),
+              ))),
+            ) : null,
+          ),
+        ),
+        authorModal !== null ? h('div', { className: 'sd-overlay', onMouseDown: event => { if (event.target === event.currentTarget) setAuthorModal(null) } },
+          h('div', { className: 'sd-modal', role: 'dialog', 'aria-modal': 'true', style: { width: 420 } },
+            h('h3', null, t('authorsTitle')),
+            h('div', { className: 'sd-authors', style: { marginTop: 10 } },
+              authorModal.map(author => h('span', { key: author, className: 'sd-author' }, author))),
+            h('div', { className: 'sd-modal-foot' },
+              h('button', { className: 'sd-btn primary', type: 'button', onClick: () => setAuthorModal(null) }, t('close')),
+            ),
+          ),
+        ) : null,
       )
     }
 
@@ -1115,6 +1465,7 @@ window.__ModuleLoader__.load({
       const [deleting, setDeleting] = useState(null)
       const [detail, setDetail] = useState(null)
       const [settingsOpen, setSettingsOpen] = useState(false)
+      const [updatesOpen, setUpdatesOpen] = useState(false)
       const [busy, setBusy] = useState(false)
       const [toasts, pushToast] = useToasts()
 
@@ -1140,7 +1491,7 @@ window.__ModuleLoader__.load({
 
       const installed = useMemo(() => data?.installed ?? [], [data])
       const counts = useMemo(() => {
-        const out = { plugin: 0, market: 0, user: 0 }
+        const out = { plugin: 0, market: 0, learned: 0, user: 0 }
         for (const skill of installed) out[skill.origin] = (out[skill.origin] ?? 0) + 1
         return out
       }, [installed])
@@ -1155,7 +1506,7 @@ window.__ModuleLoader__.load({
       }, [installed, filter, query])
 
       const groups = useMemo(() => {
-        const order = ['plugin', 'market', 'user']
+        const order = ['plugin', 'market', 'learned', 'user']
         return order.map(origin => ({
           origin,
           items: visible.filter(skill => skill.origin === origin),
@@ -1227,17 +1578,33 @@ window.__ModuleLoader__.load({
         )
       }
 
+      if (view === 'learn') {
+        return h('div', { className: 'sd-page' },
+          h('style', { key: 'sd-css' }, CSS),
+          h(LearnView, {
+            t,
+            workspace,
+            installed,
+            pushToast,
+            onBack: () => setView('list'),
+            onInstalled: load,
+          }),
+          toasts.map(item => h('div', { key: item.id, className: 'sd-toast' }, item.text)),
+        )
+      }
+
       return h('div', { className: 'sd-page' },
         h('style', { key: 'sd-css' }, CSS),
         h('div', { className: 'sd-page-inner' },
           h('div', { className: 'sd-topbar' },
-            h('button', { className: 'sd-back', type: 'button', title: t('back'), onClick: () => { try { layout?.selectPanel?.('conversation') } catch { /* ignore */ } } }, iconBack(16)),
             h('span', { className: 'sd-title' }, t('panelTitle')),
             h('span', { className: 'sd-sub' }, t('installedN', { n: installed.length })),
             h('span', { className: 'sd-spacer' }),
-            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setView('market') }, iconMarket(14), t('market')),
-            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setSettingsOpen(true) }, iconGear(14), t('settings')),
-            h('button', { className: 'sd-toplink', type: 'button', onClick: openRoot }, iconFolder(14), t('openDir')),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setView('market') }, iconMarket(15), t('market')),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setView('learn') }, iconLearn(15), t('learnTitle')),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setUpdatesOpen(true) }, iconRefresh(15), t('updatesTitle')),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: () => setSettingsOpen(true) }, iconGear(15), t('settings')),
+            h('button', { className: 'sd-toplink', type: 'button', onClick: openRoot }, iconFolder(15), t('openDir')),
           ),
           h('div', { className: 'sd-stats' },
             h('span', null, h('b', null, installed.length), ' 个已安装'),
@@ -1245,6 +1612,8 @@ window.__ModuleLoader__.load({
             h('span', null, t('statPlugin', { n: counts.plugin })),
             h('span', { className: 'sep' }, '·'),
             h('span', null, t('statMarket', { n: counts.market })),
+            h('span', { className: 'sep' }, '·'),
+            h('span', null, t('statLearned', { n: counts.learned })),
             h('span', { className: 'sep' }, '·'),
             h('span', null, t('statUser', { n: counts.user })),
             h('span', { className: 'sep' }, '·'),
@@ -1258,12 +1627,18 @@ window.__ModuleLoader__.load({
             'aria-label': t('search'),
           }),
           h('div', { className: 'sd-chips' },
-            ['all', 'plugin', 'market', 'user'].map(key => h('button', {
+            ['all', 'plugin', 'market', 'learned', 'user'].map(key => h('button', {
               key,
               type: 'button',
               className: `sd-chip${filter === key ? ' on' : ''}`,
               onClick: () => setFilter(key),
-            }, key === 'all' ? t('all') : key === 'plugin' ? t('plugin') : key === 'market' ? t('marketOrigin') : t('user'))),
+            }, key === 'all'
+              ? t('all')
+              : key === 'plugin'
+                ? t('plugin')
+                : key === 'market'
+                  ? t('marketOrigin')
+                  : key === 'learned' ? t('learned') : t('user'))),
           ),
           installed.length === 0
             ? h('div', { className: 'sd-empty' },
@@ -1307,6 +1682,13 @@ window.__ModuleLoader__.load({
             pushToast(t('toastScope'))
             load()
           },
+        }) : null,
+        updatesOpen ? h(UpdatesModal, {
+          t,
+          workspace,
+          pushToast,
+          onClose: () => setUpdatesOpen(false),
+          onInstalled: load,
         }) : null,
         toasts.map(item => h('div', { key: item.id, className: 'sd-toast' }, item.text)),
       )
