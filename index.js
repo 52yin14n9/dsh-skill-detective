@@ -395,6 +395,12 @@ const NEEDS = [
     candidates: ['crawler-kit'],
   },
   {
+    key: 'translate',
+    label: '文档翻译',
+    keywords: ['翻译', 'translate', '译成', '英译中', '中译英', '转成英文'],
+    candidates: ['translate-docs'],
+  },
+  {
     key: 'word',
     label: 'Word 文档',
     keywords: ['word', 'docx', '文档', '报告', '合同', '周报', '日报', '月报', '总结'],
@@ -451,6 +457,7 @@ const TASK_VERBS = [
   '爬', '采集', '抓取', '导出', '翻译', '压缩', '合并', '拆分', '截图',
   '审查', '测试', '部署', '创建', '制作', '修改', '编辑', '汇总', '统计',
   '格式化', '校验', '清洗', '扫描', '同步', '排版', '演示', '汇报',
+  '调', '剪', '转', '转录', '转写', '重命名', '合成', 'review',
 ]
 
 /** Verbs that mark an actionable request; a message without one is conversation. */
@@ -459,7 +466,8 @@ const OPEN_VERBS = [
   '爬', '采集', '抓取', '导出', '翻译', '压缩', '合并', '拆分', '截图',
   '审查', '测试', '部署', '创建', '制作', '修改', '编辑', '汇总', '统计',
   '格式化', '校验', '清洗', '扫描', '同步', '排版', '演示', '汇报',
-  '设计', '建模', '渲染', '剪辑', '录制', '配音', '配图', '发布', '排版',
+  '设计', '建模', '渲染', '剪辑', '剪', '录制', '配音', '配图', '发布', '排版',
+  '转', '转录', '转写', '重命名', '合成', '调', 'review',
 ]
 
 /** Display names for the common verbs, used when no bundled need matches. */
@@ -471,8 +479,9 @@ const VERB_LABELS = {
   部署: '部署', 创建: '创建', 制作: '制作', 修改: '修改', 编辑: '编辑',
   汇总: '汇总', 统计: '统计', 格式化: '格式化', 校验: '校验', 清洗: '数据清洗',
   扫描: '扫描', 同步: '同步', 排版: '排版', 演示: '演示', 汇报: '汇报',
-  设计: '设计', 建模: '建模', 渲染: '渲染', 剪辑: '视频剪辑', 录制: '录制',
+  设计: '设计', 建模: '建模', 渲染: '渲染', 剪辑: '视频剪辑', 剪: '视频剪辑', 录制: '录制',
   配音: '配音', 配图: '配图', 发布: '发布',
+  转: '格式转换', 转录: '语音转写', 转写: '语音转写', 重命名: '批量重命名', 合成: '音视频合成',
 }
 
 /** Filler that never helps match a skill; kept short on purpose. */
@@ -519,8 +528,8 @@ const INTENTS = [
   { skill: 'docker-helper', test: /docker|容器|镜像|compose/i },
   { skill: 'regex-tester', test: /正则|regex/i },
   { skill: 'unit-test-helper', test: /单元测试|测试用例|覆盖率|test/i },
-  { skill: 'code-review', test: /代码审查|code review|评审/i },
-  { skill: 'log-analyzer', test: /日志|log/i },
+  { skill: 'code-review', test: /代码审查|code review|\breview\b|评审/i },
+  { skill: 'log-analyzer', test: /日志|\blog\b|logs?\b/i },
   { skill: 'secrets-scanner', test: /密钥|凭证|secret/i },
   { skill: 'http-client', test: /http|接口|api|请求调试/i },
   { skill: 'rss-reader', test: /rss|订阅/i },
@@ -1712,8 +1721,7 @@ class SkillDetective {
     const hits = tokens.filter(token => token.length >= 2 && haystack.includes(token))
     // One accidental word overlap is not coverage; require two distinct hits.
     if (hits.length >= 2) return { covered: true, hits, tokens }
-    const noun = tokens.find(token => /^[\u4e00-\u9fff]{2,4}$/.test(token) && !OPEN_VERBS.includes(token)) ?? ''
-    const label = `${VERB_LABELS[verb] ?? verb}${noun === '' ? '' : ` · ${noun}`}`
+    const label = VERB_LABELS[verb] ?? verb
     return { covered: false, verb, tokens, label, searchText: String(text ?? '') }
   }
 
@@ -3122,6 +3130,21 @@ export function apply(ctx) {
               service.normalizeWorkspace(body.workspace ?? ''),
               body.name,
             ))
+          }
+
+          if (route === '/probe') {
+            const text = String(body.text ?? '')
+            const workspace = service.normalizeWorkspace(body.workspace ?? '')
+            const analysis = await service.analyze(text, workspace)
+            let open = null
+            if (analysis.need === null) {
+              try {
+                open = await service.openNeed(text, workspace)
+              } catch (error) {
+                open = { error: error instanceof Error ? error.message : String(error) }
+              }
+            }
+            return sendJson(res, 200, { ok: true, text, analysis, open })
           }
 
           if (route === '/analyze') {
