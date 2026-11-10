@@ -710,7 +710,9 @@ const SKILL_GROUPS = {
 }
 
 function groupOf(entry) {
-  return SKILL_GROUPS[entry.name] ?? entry.name
+  // Learned skills (`<name>-pro`) belong to the group of their source skill.
+  const base = String(entry.name ?? '').replace(/-pro$/, '')
+  return SKILL_GROUPS[base] ?? entry.name
 }
 
 /** Whether two skills solve the same task and are therefore alternatives. */
@@ -883,6 +885,17 @@ class StateStore {
     const state = raw && typeof raw === 'object' ? raw : {}
     const settings = state.settings && typeof state.settings === 'object' ? state.settings : {}
     const installs = state.installs && typeof state.installs === 'object' ? state.installs : {}
+    const suppressedRaw = state.suppressed && typeof state.suppressed === 'object' ? state.suppressed : {}
+    const suppressed = {}
+    for (const [need, value] of Object.entries(suppressedRaw)) {
+      if (typeof need !== 'string' || need === '') continue
+      const record = value && typeof value === 'object' ? value : {}
+      suppressed[need] = {
+        at: stamp(record.at),
+        label: typeof record.label === 'string' ? record.label : need,
+        skill: typeof record.skill === 'string' ? record.skill : '',
+      }
+    }
     return {
       version: STATE_VERSION,
       settings: {
@@ -896,6 +909,7 @@ class StateStore {
           : [],
       },
       installs,
+      suppressed,
     }
   }
 
@@ -1042,8 +1056,7 @@ class SkillDetective {
     this.pending = new Map() // sessionId -> recommendation
     this.sessionWorkspaces = new Map() // sessionId -> absolute cwd
     this.auditedList = undefined // lazily audited marketplace catalog
-    this.lastRecommend = new Map() // sessionId -> timestamp of the last bubble
-    this.dismissed = new Map() // `${sessionId}:${needKey}` -> timestamp
+    this.lastNeedAt = new Map() // `${sessionId}:${need}` -> timestamp
     this.lastSearch = null
     this.log = (...args) => {
       try {
@@ -1179,8 +1192,18 @@ class SkillDetective {
     }
     const installed = await this.listInstalled(workspace)
     const enabledNames = new Set(installed.filter(item => item.enabled).map(item => item.name))
-    const coveredName = analysis.need.candidates.find(candidate => enabledNames.has(candidate)) ?? null
-    const covered = coveredName === null ? null : installed.find(item => item.name === coveredName) ?? null
+    // Coverage: an enabled skill either matches a candidate directly, or belongs
+    // to the same functional group — a learned `word-docx-pro` covers the `word`
+    // need just like `word-docx` does.
+    const primaryEntry = BY_NAME.get(analysis.need.candidates[0])
+    const covered = installed.find(item => item.enabled && analysis.need.candidates.includes(item.name)) ??
+      (primaryEntry === undefined
+        ? null
+        : installed.find(item => item.enabled && isRelatedSkill(primaryEntry, {
+          name: item.name,
+          category: item.category,
+          description: item.description,
+        })) ?? null)
 
     const audited = this.auditedCatalog()
     const candidates = analysis.need.candidates
@@ -1198,6 +1221,7 @@ class SkillDetective {
       label: analysis.need.label,
       matched: analysis.matched,
       inferred: analysis.inferred === true,
+      suppressed: (this.state.data?.suppressed ?? {})[analysis.need.key] !== undefined,
       candidates,
       covered,
       installedCount: installed.length,
@@ -1897,16 +1921,19 @@ class SkillDetective {
       return
     }
     if (analysis.need === null) return
+    // A need the user sent away never asks again until restored in settings.
+    const suppressed = this.state.data?.suppressed ?? {}
+    if (suppressed[analysis.need] !== undefined) return
     // A requirement already covered by an installed, enabled skill stays silent:
     // the user asked for work, not for a second nudge about their own skills.
     if (analysis.covered !== null) return
 
+    // Ask each distinct need once per 10 minutes per session; a different need is
+    // never delayed, so a new request is not dropped behind a throttle.
     const now = Date.now()
-    // Throttle: one bubble per session every 45s, and a need the user sent away
-    // stays quiet for 10 minutes.
-    if (now - (this.lastRecommend.get(sessionId) ?? 0) < 45_000) return
-    if (now - (this.dismissed.get(`${sessionId}:${analysis.need}`) ?? 0) < 10 * 60_000) return
-    this.lastRecommend.set(sessionId, now)
+    const needKey = `${sessionId}:${analysis.need}`
+    if (now - (this.lastNeedAt.get(needKey) ?? 0) < 10 * 60_000) return
+    this.lastNeedAt.set(needKey, now)
 
     this.pending.set(sessionId, {
       kind: 'recommend',
@@ -1935,15 +1962,50 @@ class SkillDetective {
     return value
   }
 
-  dismiss(sessionId) {
+  /** Persistent "先不用" list, newest first. */
+  suppressedList() {
+    const data = this.state.data
+    if (data === null || data === undefined) return []
+    return Object.entries(data.suppressed ?? {})
+      .map(([need, record]) => ({
+        need,
+        label: record.label,
+        skill: record.skill,
+        at: record.at,
+        timeLabel: relativeTime(record.at),
+      }))
+      .sort((a, b) => b.at - a.at)
+  }
+
+  /**
+   * "先不用" writes a persistent per-need rule instead of a session timer: once
+   * a need is suppressed it never asks again until the user restores it from the
+   * settings panel.
+   */
+  async dismiss(sessionId) {
     if (sessionId) {
       const pending = this.pending.get(sessionId)
       if (pending !== undefined && typeof pending.need === 'string') {
-        this.dismissed.set(`${sessionId}:${pending.need}`, Date.now())
+        const need = pending.need
+        await this.state.update(data => {
+          data.suppressed[need] = {
+            at: Date.now(),
+            label: String(pending.label ?? need),
+            skill: String(pending.candidates?.[0]?.name ?? ''),
+          }
+        })
       }
       this.pending.delete(sessionId)
     }
-    return { ok: true }
+    return { ok: true, suppressed: this.suppressedList() }
+  }
+
+  async restoreSuppressed(need) {
+    if (typeof need !== 'string' || need === '') return { ok: false }
+    await this.state.update(data => {
+      delete data.suppressed[need]
+    })
+    return { ok: true, suppressed: this.suppressedList() }
   }
 }
 
@@ -2059,6 +2121,7 @@ export function apply(ctx) {
               dshHome: DSH_HOME,
               settings: state.settings,
               installed,
+              suppressed: service.suppressedList(),
             })
           }
 
@@ -2144,7 +2207,11 @@ export function apply(ctx) {
           }
 
           if (route === '/dismiss') {
-            return sendJson(res, 200, service.dismiss(String(body.sessionId ?? '')))
+            return sendJson(res, 200, await service.dismiss(String(body.sessionId ?? '')))
+          }
+
+          if (route === '/restore-suppressed') {
+            return sendJson(res, 200, await service.restoreSuppressed(String(body.need ?? '')))
           }
 
           if (route === '/search') {

@@ -139,6 +139,10 @@ window.__ModuleLoader__.load({
       matchScore: '匹配度',
       sourceAuthors: '来源作者',
       auditFailed: '整合稿未通过安全审查，已阻止安装',
+      suppressedTitle: '不再提示的需求',
+      suppressedHint: '点过「先不用」的需求不会再弹窗，可在这里恢复',
+      suppressedEmpty: '暂无',
+      restore: '恢复',
       reviewPass: '审查通过',
       deleted: '已删除 {name}',
       toastDisabled: '已禁用 {name}',
@@ -271,6 +275,10 @@ window.__ModuleLoader__.load({
       matchScore: 'match',
       sourceAuthors: 'Source authors',
       auditFailed: 'Merged draft failed the security audit; install blocked',
+      suppressedTitle: 'Suppressed needs',
+      suppressedHint: 'Needs dismissed with "Not now" never ask again. Restore them here.',
+      suppressedEmpty: 'None',
+      restore: 'Restore',
       reviewPass: 'Audit passed',
       deleted: 'Deleted {name}',
       toastDisabled: 'Disabled {name}',
@@ -1001,6 +1009,15 @@ window.__ModuleLoader__.load({
 
       const setRow = (name, patch) => setRows(current => ({ ...current, [name]: { ...current[name], ...patch } }))
 
+      const restore = async need => {
+        try {
+          await api('/restore-suppressed', { body: { need } })
+          onSaved?.()
+        } catch (err) {
+          setError(err.message)
+        }
+      }
+
       const save = async () => {
         setSaving(true)
         setError('')
@@ -1073,6 +1090,18 @@ window.__ModuleLoader__.load({
                 : null,
             )
           }),
+          h('div', { className: 'sd-h4' }, t('suppressedTitle')),
+          h('div', { className: 'sd-muted', style: { marginBottom: 6 } }, t('suppressedHint')),
+          (data.suppressed ?? []).length === 0
+            ? h('div', { className: 'sd-hint', style: { padding: '6px 0 2px' } }, t('suppressedEmpty'))
+            : h('div', null, (data.suppressed ?? []).map(item => h('div', { key: item.need, className: 'sd-srow' },
+              h('span', { className: 'nm' }, `${item.label}${item.skill ? ` · ${item.skill}` : ''}`),
+              h('span', { className: 'sd-muted', style: { marginRight: 8 } }, item.timeLabel),
+              h('button', {
+                className: 'sd-btn', type: 'button',
+                onClick: () => restore(item.need),
+              }, t('restore')),
+            ))),
           error ? h('div', { style: { color: '#ff8080', fontSize: 12, marginTop: 10 } }, error) : null,
           h('div', { className: 'sd-modal-foot' },
             h('button', { className: 'sd-btn', type: 'button', onClick: onClose }, t('cancel')),
