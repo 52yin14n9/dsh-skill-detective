@@ -464,6 +464,11 @@ const TASK_VERBS = [
   '审查', '测试', '部署', '创建', '制作', '修改', '编辑', '汇总', '统计',
   '格式化', '校验', '清洗', '扫描', '同步', '排版', '演示', '汇报',
   '调', '剪', '转', '转录', '转写', '重命名', '合成', 'review',
+  '重构', '配置', '检查', '安排', '搜', '计算', '算一下', '添加', '加字幕', '加水印',
+  '总结', '解释',
+  'generate', 'create', 'make', 'write', 'build', 'design', 'render',
+  'convert', 'extract', 'analyze', 'summarise', 'summarize', 'scrape',
+  'crawl', 'test', 'refactor', 'explain', 'deploy', 'translate', 'edit', 'search',
 ]
 
 /** Verbs that mark an actionable request; a message without one is conversation. */
@@ -474,6 +479,11 @@ const OPEN_VERBS = [
   '格式化', '校验', '清洗', '扫描', '同步', '排版', '演示', '汇报',
   '设计', '建模', '渲染', '剪辑', '剪', '录制', '配音', '配图', '发布', '排版',
   '转', '转录', '转写', '重命名', '合成', '调', 'review',
+  '重构', '配置', '检查', '安排', '搜', '计算', '算一下', '添加', '加字幕', '加水印',
+  '总结', '解释',
+  'generate', 'create', 'make', 'write', 'build', 'design', 'render',
+  'convert', 'extract', 'analyze', 'summarise', 'summarize', 'scrape',
+  'crawl', 'test', 'refactor', 'explain', 'deploy', 'translate', 'edit', 'search',
 ]
 
 /** Display names for the common verbs, used when no bundled need matches. */
@@ -1713,6 +1723,8 @@ class SkillDetective {
    */
   async openNeed(text, workspace) {
     const lower = String(text ?? '').toLowerCase()
+    // "what is X / why does Y" is a knowledge question, not a task request.
+    if (/什么是|是什么|为什么|怎么样|如何理解|介绍一下/.test(lower) && !/[。！？!?]\s*$/.test(lower)) return null
     const verb = OPEN_VERBS.find(item => lower.includes(item))
     if (verb === undefined) return null
     const tokens = openKeywords(lower)
