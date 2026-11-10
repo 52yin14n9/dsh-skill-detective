@@ -191,8 +191,8 @@ window.__ModuleLoader__.load({
       groupScan: '本地扫描',
       statScan: '本地扫描 {n}',
       scanNow: '重新扫描',
-      scanning: '扫描中…',
-      scanDone: '扫描完成：共 {n} 个，新增 {m} 个',
+      scanning: '正在扫描技能目录…',
+      scanDone: '扫描完成：共 {n} 个技能，新增 {m} 个',
       scanFailed: '扫描失败：',
       scanNever: '尚未扫描',
       scanInfo: '上次扫描 {time} · 共 {n} 个',
@@ -361,8 +361,8 @@ window.__ModuleLoader__.load({
       groupScan: 'Scanned locally',
       statScan: 'scanned {n}',
       scanNow: 'Rescan',
-      scanning: 'Scanning…',
-      scanDone: 'Scan complete: {n} total, {m} new',
+      scanning: 'Scanning skill roots…',
+      scanDone: 'Scan complete: {n} skills, {m} new',
       scanFailed: 'Scan failed: ',
       scanNever: 'Not scanned yet',
       scanInfo: 'Scanned {time} · {n} skills',
@@ -513,11 +513,11 @@ window.__ModuleLoader__.load({
 .sd-replace:disabled { opacity: .6; cursor: default; }
 .sd-checkbox { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; flex: 0 0 14px; }
 .sd-status-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 95; pointer-events: none; }
-.sd-status { display: flex; align-items: center; gap: 11px; min-width: 220px; padding: 15px 24px; border-radius: 12px; background: rgba(20,20,23,.94); border: 1px solid rgba(255,255,255,.13); box-shadow: 0 18px 52px rgba(0,0,0,.55); color: #e8e8ea; font-size: 13.5px; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); animation: sd-in .16s ease-out; }
+.sd-status { display: flex; align-items: center; gap: 12px; min-width: 280px; padding: 18px 28px; border-radius: 12px; background: rgba(20,20,23,.94); border: 1px solid rgba(255,255,255,.13); box-shadow: 0 18px 52px rgba(0,0,0,.55); color: #e8e8ea; font-size: 15px; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); animation: sd-in .16s ease-out; }
 .sd-status.none { color: #c9a96a; border-color: rgba(201,169,106,.34); }
 .sd-status.ok { color: #35e0d2; border-color: rgba(53,224,210,.34); }
-.sd-status-icon { font-size: 15px; line-height: 1; }
-.sd-spin { width: 15px; height: 15px; flex: 0 0 15px; border-radius: 50%; border: 2px solid rgba(201,169,106,.25); border-top-color: #c9a96a; animation: sd-spin .7s linear infinite; }
+.sd-status-icon { font-size: 17px; line-height: 1; }
+.sd-spin { width: 17px; height: 17px; flex: 0 0 17px; border-radius: 50%; border: 2px solid rgba(201,169,106,.25); border-top-color: #c9a96a; animation: sd-spin .7s linear infinite; }
 @keyframes sd-spin { to { transform: rotate(360deg); } }
 .sd-dim { opacity: .45; }
 .sd-learn-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
@@ -1689,7 +1689,7 @@ window.__ModuleLoader__.load({
       const [updatesOpen, setUpdatesOpen] = useState(false)
       const [busy, setBusy] = useState(false)
       const [replacing, setReplacing] = useState('')
-      const [replaceStatus, setReplaceStatus] = useState(null)
+      const [overlayStatus, setOverlayStatus] = useState(null)
       const [scanning, setScanning] = useState(false)
       const [openBundles, setOpenBundles] = useState({})
       const [toasts, pushToast] = useToasts()
@@ -1762,14 +1762,19 @@ window.__ModuleLoader__.load({
       const rescan = async () => {
         if (scanning) return
         setScanning(true)
+        setOverlayStatus({ kind: 'loading', text: t('scanning') })
+        const started = Date.now()
         try {
           const result = await api('/scan', { body: {} })
-          pushToast(t('scanDone', { n: result.total ?? 0, m: result.added ?? 0 }))
+          const rest = 400 - (Date.now() - started)
+          if (rest > 0) await new Promise(resolve => setTimeout(resolve, rest))
+          setOverlayStatus({ kind: 'ok', text: t('scanDone', { n: result.total ?? 0, m: result.added ?? 0 }) })
           load()
         } catch (err) {
-          pushToast(`${t('scanFailed')}${err.message}`)
+          setOverlayStatus({ kind: 'none', text: `${t('scanFailed')}${err.message}` })
         } finally {
           setScanning(false)
+          setTimeout(() => setOverlayStatus(null), 3200)
         }
       }
 
@@ -1813,7 +1818,7 @@ window.__ModuleLoader__.load({
       const replaceSkill = async skill => {
         if (replacing !== '') return
         setReplacing(skill.name)
-        setReplaceStatus({ kind: 'loading', text: t('replaceSearching') })
+        setOverlayStatus({ kind: 'loading', text: t('replaceSearching') })
         const started = Date.now()
         // Always keep the spinner visible for at least 300ms so the result never
         // flashes in before the user reads the loading state.
@@ -1824,14 +1829,14 @@ window.__ModuleLoader__.load({
         try {
           const result = await api('/replace', { body: { name: skill.name, workspace } })
           await settle()
-          setReplaceStatus({ kind: 'ok', text: t('replaceInstalled', { name: result.name }) })
+          setOverlayStatus({ kind: 'ok', text: t('replaceInstalled', { name: result.name }) })
           load()
         } catch (err) {
           await settle()
-          setReplaceStatus({ kind: 'none', text: err.message || t('replaceNone') })
+          setOverlayStatus({ kind: 'none', text: err.message || t('replaceNone') })
         } finally {
           setReplacing('')
-          setTimeout(() => setReplaceStatus(null), 1900)
+          setTimeout(() => setOverlayStatus(null), 1900)
         }
       }
 
@@ -2058,12 +2063,12 @@ window.__ModuleLoader__.load({
           onClose: () => setUpdatesOpen(false),
           onInstalled: load,
         }) : null,
-        replaceStatus ? h('div', { className: 'sd-status-wrap' },
-          h('div', { className: `sd-status ${replaceStatus.kind}` },
-            replaceStatus.kind === 'loading'
+        overlayStatus ? h('div', { className: 'sd-status-wrap' },
+          h('div', { className: `sd-status ${overlayStatus.kind}` },
+            overlayStatus.kind === 'loading'
               ? h('span', { className: 'sd-spin' })
-              : h('span', { className: 'sd-status-icon' }, replaceStatus.kind === 'ok' ? '✓' : '🐟'),
-            h('span', null, replaceStatus.text),
+              : h('span', { className: 'sd-status-icon' }, overlayStatus.kind === 'ok' ? '✓' : '🐟'),
+            h('span', null, overlayStatus.text),
           ),
         ) : null,
         toasts.map(item => h('div', { key: item.id, className: 'sd-toast' }, item.text)),
