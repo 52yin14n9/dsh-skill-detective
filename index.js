@@ -438,6 +438,12 @@ const NEEDS = [
     candidates: ['git-tools'],
   },
   {
+    key: 'migrate',
+    label: '数据库迁移与建表',
+    keywords: ['表结构', '建表', '建库', '迁移', 'migrate', 'schema', '数据库设计', '数据模型', '字段设计'],
+    candidates: ['db-migrate'],
+  },
+  {
     key: 'sqlite',
     label: 'SQLite 查询',
     keywords: ['sqlite', 'sql ', '数据库查询', 'sql查询'],
@@ -540,7 +546,7 @@ const INTENTS = [
   { skill: 'translate-docs', test: /翻译|translate/i },
   { skill: 'form-builder', test: /表单|问卷|form/i },
   { skill: 'markdown-writer', test: /markdown|md 文档|笔记/i },
-  { skill: 'html-report', test: /html|网页报告|单页/i },
+  { skill: 'html-report', test: /html|网页报告|单页|落地页|landing/i },
   { skill: 'data-cleaner', test: /数据清洗|清洗数据|去重|缺失值/i },
   { skill: 'word-docx', test: /word|docx|文档|报告|周报|日报|月报|总结|合同|说明书/i },
 ]
@@ -1669,15 +1675,13 @@ class SkillDetective {
     // Coverage: an enabled skill either matches a candidate directly, or belongs
     // to the same functional group — a learned `word-docx-pro` covers the `word`
     // need just like `word-docx` does.
-    const primaryEntry = BY_NAME.get(analysis.need.candidates[0])
-    const covered = installed.find(item => item.enabled && analysis.need.candidates.includes(item.name)) ??
-      (primaryEntry === undefined
-        ? null
-        : installed.find(item => item.enabled && isRelatedSkill(primaryEntry, {
-          name: item.name,
-          category: item.category,
-          description: item.description,
-        })) ?? null)
+    // Coverage is name-based on purpose: an installed word-docx must not silence
+    // an html-report request just because both live in the document family.
+    // A learned `<name>-pro` still counts as covering its source skill.
+    const covered = installed.find(item => item.enabled && analysis.need.candidates.some(candidate =>
+      item.name === candidate
+      || item.name === `${candidate}-pro`
+      || candidate === `${item.name}-pro`)) ?? null
 
     const audited = this.auditedCatalog()
     const candidates = analysis.need.candidates
