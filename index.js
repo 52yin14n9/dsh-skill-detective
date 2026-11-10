@@ -2259,7 +2259,15 @@ class SkillDetective {
       if (typeof query !== 'string' || query === '') continue
       const result = await this.remoteCatalog(query)
       if (!result.ok || result.skills.length === 0) continue
-      const best = [...result.skills].sort((a, b) => b.installs - a.installs)[0]
+      // Prefer a name that actually matches the query words; install count only
+      // breaks ties, otherwise a popular video tool wins an image request.
+      const terms = String(query).toLowerCase().split(/\s+/).filter(Boolean)
+      const best = [...result.skills]
+        .map(item => ({
+          item,
+          score: terms.filter(term => `${item.name} ${item.skillId}`.toLowerCase().includes(term)).length,
+        }))
+        .sort((a, b) => b.score - a.score || b.item.installs - a.item.installs)[0].item
       step('search', '检索 skills.sh', 'ok', `远程命中 ${result.skills.length} 个候选，取「${best.name}」`)
       const installed = await this.installRemote(best.id, ws, best.skillId)
       if (!installed.ok) {
@@ -2292,6 +2300,7 @@ class SkillDetective {
 
     let needLabel = ''
     let candidateNames = []
+    let needDef = null
     if (requested !== null) {
       const entry = BY_NAME.get(requested)
       if (entry === undefined) {
@@ -2303,6 +2312,7 @@ class SkillDetective {
       step('analyze', '语义分析', 'ok', `目标技能 ${entry.name}`)
     } else {
       const def = typeof need === 'string' ? NEEDS.find(item => item.key === need) : undefined
+      needDef = def ?? null
       if (def === undefined && need === 'open') {
         const searchText = typeof text === 'string' ? text.trim() : ''
         if (searchText === '') {
@@ -2340,7 +2350,7 @@ class SkillDetective {
 
     if (candidates.length === 0) {
       // The curated catalog has no fit for this need; ask skills.sh instead.
-      const remoteName = await this.installFromRemote(def, step, targetScope, ws, sessionId)
+      const remoteName = await this.installFromRemote(needDef, step, targetScope, ws, sessionId)
       if (remoteName === null) {
         step('search', '检索 skills.sh', 'fail', '内置目录与 skills.sh 都没有合适候选')
         return { ok: false, steps, error: 'none-found' }
