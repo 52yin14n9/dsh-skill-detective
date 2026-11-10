@@ -819,7 +819,7 @@ window.__ModuleLoader__.load({
               return
             }
             if (pending.kind === 'recommend') {
-              setView({ kind: 'recommend', label: pending.label, need: pending.need, candidates: pending.candidates })
+              setView({ kind: 'recommend', label: pending.label, need: pending.need, candidates: pending.candidates, searchText: pending.searchText })
             }
           } catch {
             /* the host may still be booting */
@@ -843,6 +843,7 @@ window.__ModuleLoader__.load({
       const start = async (needArg, labelArg) => {
         const need = needArg ?? view?.need
         const label = labelArg ?? view?.label
+        const searchText = view?.searchText ?? ''
         if (need === undefined || label === undefined) return
         doneRef.current = false
         setFade(false)
@@ -871,7 +872,7 @@ window.__ModuleLoader__.load({
 
         try {
           const result = await api('/install', {
-            body: { need, sessionId: sessionRef.current },
+            body: { need, sessionId: sessionRef.current, text: searchText },
           })
           clearTimers()
           const real = Array.isArray(result.steps) ? result.steps : []

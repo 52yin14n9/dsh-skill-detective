@@ -453,6 +453,57 @@ const TASK_VERBS = [
   '格式化', '校验', '清洗', '扫描', '同步', '排版', '演示', '汇报',
 ]
 
+/** Verbs that mark an actionable request; a message without one is conversation. */
+const OPEN_VERBS = [
+  '画', '绘制', '作图', '生成', '做', '写', '整理', '分析', '转换', '提取',
+  '爬', '采集', '抓取', '导出', '翻译', '压缩', '合并', '拆分', '截图',
+  '审查', '测试', '部署', '创建', '制作', '修改', '编辑', '汇总', '统计',
+  '格式化', '校验', '清洗', '扫描', '同步', '排版', '演示', '汇报',
+  '设计', '建模', '渲染', '剪辑', '录制', '配音', '配图', '发布', '排版',
+]
+
+/** Display names for the common verbs, used when no bundled need matches. */
+const VERB_LABELS = {
+  画: '绘图', 绘制: '绘图', 作图: '绘图', 生成: '生成', 做: '制作', 写: '写作',
+  整理: '整理', 分析: '分析', 转换: '格式转换', 提取: '信息提取', 爬: '爬虫',
+  采集: '数据采集', 抓取: '数据抓取', 导出: '导出', 翻译: '翻译', 压缩: '压缩',
+  合并: '合并', 拆分: '拆分', 截图: '截图', 审查: '审查', 测试: '测试',
+  部署: '部署', 创建: '创建', 制作: '制作', 修改: '修改', 编辑: '编辑',
+  汇总: '汇总', 统计: '统计', 格式化: '格式化', 校验: '校验', 清洗: '数据清洗',
+  扫描: '扫描', 同步: '同步', 排版: '排版', 演示: '演示', 汇报: '汇报',
+  设计: '设计', 建模: '建模', 渲染: '渲染', 剪辑: '视频剪辑', 录制: '录制',
+  配音: '配音', 配图: '配图', 发布: '发布',
+}
+
+/** Filler that never helps match a skill; kept short on purpose. */
+const OPEN_STOP_WORDS = new Set([
+  '帮我', '帮忙', '一个', '一下', '这个', '那个', '可以', '请问', '请', '能不能', '能否',
+  '我想', '我要', '需要', '然后', '现在', '今天', '明天', '一些', '几个', '这些', '那些',
+  '什么', '怎么', '如何', '是否', '应该', '我们', '你们', '他们', '自己', '我的', '你的',
+  '给我', '把这', '把一', '一点', '有点', '就行', '最好', '比较', '非常', '真的', '还是',
+  '以及', '或者', '并且', '但是', '因为', '所以', '如果', '时候', '东西', '内容', '相关',
+])
+
+/** Split a request into 2-3 character Chinese pieces plus latin words. */
+function openKeywords(text) {
+  const lower = String(text ?? '').toLowerCase()
+  const words = new Set()
+  for (const token of lower.match(/[a-z][a-z0-9-]{1,}/g) ?? []) {
+    if (token.length >= 3 && !OPEN_STOP_WORDS.has(token)) words.add(token)
+  }
+  const han = lower.replace(/[^\u4e00-\u9fff]+/g, ' ')
+  for (const run of han.split(/\s+/)) {
+    if (run.length < 2) continue
+    for (let size = Math.min(3, run.length); size >= 2; size -= 1) {
+      for (let index = 0; index + size <= run.length; index += 1) {
+        const piece = run.slice(index, index + size)
+        if (!OPEN_STOP_WORDS.has(piece)) words.add(piece)
+      }
+    }
+  }
+  return [...words].slice(0, 60)
+}
+
 const INTENTS = [
   { skill: 'pdf-toolkit', test: /pdf|拆分文档|合并文档/i },
   { skill: 'ppt-deck', test: /ppt|幻灯片|演示文稿|slide|汇报材料|路演/i },
@@ -707,7 +758,9 @@ function auditFiles(files) {
       if (host === '') continue
       if (TRUSTED_HOSTS.has(host)) continue
       if (host.endsWith('.githubusercontent.com')) continue
-      add('high', 'external-domain', `外联未知域名 ${host}`)
+      // A documented API host is normal for a skill; only eval/obfuscation/process
+      // execution blocks an install. Keep the domain as a warning for the audit log.
+      add('medium', 'external-domain', `外联未知域名 ${host}`)
     }
   }
 
@@ -1640,6 +1693,30 @@ class SkillDetective {
     }
   }
 
+  /**
+   * Open-ended detection: an actionable verb with no installed skill covering
+   * its subject becomes a need even when no curated keyword matched. This is
+   * what lets the plugin answer requests the bundled catalog never anticipated.
+   */
+  async openNeed(text, workspace) {
+    const lower = String(text ?? '').toLowerCase()
+    const verb = OPEN_VERBS.find(item => lower.includes(item))
+    if (verb === undefined) return null
+    const tokens = openKeywords(lower)
+    if (tokens.length === 0) return null
+    const installed = await this.listInstalled(workspace)
+    const enabled = installed.filter(item => item.enabled)
+    const haystack = enabled
+      .map(item => `${item.name} ${item.description ?? ''} ${item.whenToUse ?? ''}`.toLowerCase())
+      .join(' ')
+    const hits = tokens.filter(token => token.length >= 2 && haystack.includes(token))
+    // One accidental word overlap is not coverage; require two distinct hits.
+    if (hits.length >= 2) return { covered: true, hits, tokens }
+    const noun = tokens.find(token => /^[\u4e00-\u9fff]{2,4}$/.test(token) && !OPEN_VERBS.includes(token)) ?? ''
+    const label = `${VERB_LABELS[verb] ?? verb}${noun === '' ? '' : ` · ${noun}`}`
+    return { covered: false, verb, tokens, label, searchText: String(text ?? '') }
+  }
+
   /** Curated market list with installed markers. */
   async market(workspace) {
     const installed = await this.listInstalled(workspace)
@@ -2054,13 +2131,39 @@ class SkillDetective {
       REMOTE_REPOS.set(repoKey, info)
     }
     const branch = info.branch
+    // Repos do not share one layout: ask GitHub for the tree and match the skill
+    // directory wherever it sits (tools/image/<id>/SKILL.md, guides/..., etc.).
+    let treePath = ''
+    if (info.paths === undefined) {
+      const tree = await fetchText(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
+        12000,
+        { accept: 'application/vnd.github+json' },
+      )
+      if (tree.ok) {
+        try {
+          const parsed = JSON.parse(tree.text)
+          info.paths = (Array.isArray(parsed.tree) ? parsed.tree : [])
+            .map(item => (typeof item.path === 'string' ? item.path : ''))
+            .filter(path => path.endsWith('/SKILL.md'))
+        } catch {
+          info.paths = []
+        }
+      } else {
+        info.paths = []
+      }
+      REMOTE_REPOS.set(repoKey, info)
+    }
+    const suffix = `/${skillId}/SKILL.md`
+    treePath = (info.paths ?? []).find(path => path.endsWith(suffix)) ?? ''
     const candidates = [
+      ...(treePath === '' ? [] : [treePath]),
       `skills/${skillId}/SKILL.md`,
       `.claude/skills/${skillId}/SKILL.md`,
       `.agents/skills/${skillId}/SKILL.md`,
       `${skillId}/SKILL.md`,
       'SKILL.md',
-    ]
+    ].filter((path, index, list) => list.indexOf(path) === index)
     for (const path of candidates) {
       for (const mirror of RAW_MIRRORS) {
         const url = mirror(owner, repo, branch, path)
@@ -2171,7 +2274,7 @@ class SkillDetective {
     return null
   }
 
-  async install({ name, need, origin, scope, sessionId, workspace }) {
+  async install({ name, need, origin, scope, sessionId, workspace, text }) {
     const state = await this.state.load()
     const requestedScope = scope === 'global' || scope === 'temp' || scope === 'workspace' ? scope : null
     const targetScope = requestedScope ?? (state.settings.defaultScope === 'workspace' ? 'workspace' : 'global')
@@ -2200,6 +2303,24 @@ class SkillDetective {
       step('analyze', '语义分析', 'ok', `目标技能 ${entry.name}`)
     } else {
       const def = typeof need === 'string' ? NEEDS.find(item => item.key === need) : undefined
+      if (def === undefined && need === 'open') {
+        const searchText = typeof text === 'string' ? text.trim() : ''
+        if (searchText === '') {
+          step('analyze', '语义分析', 'fail', '缺少可用于检索的需求描述')
+          return { ok: false, steps, error: 'no-need' }
+        }
+        needLabel = '未收录需求'
+        step('analyze', '语义分析', 'ok', `开放需求：${searchText.slice(0, 24)}`)
+        const remoteName = await this.installFromRemote(
+          { label: needLabel, keywords: [searchText], searchTerms: [searchText] },
+          step, targetScope, ws, sessionId,
+        )
+        if (remoteName === null) {
+          step('search', '检索 skills.sh', 'fail', '没找到可安装的技能')
+          return { ok: false, steps, error: 'none-found' }
+        }
+        return { ok: true, steps, name: remoteName, label: needLabel, remote: true }
+      }
       if (def === undefined) {
         step('analyze', '语义分析', 'fail', '没能识别出明确的需求类型')
         return { ok: false, steps, error: 'no-need' }
@@ -2583,13 +2704,27 @@ class SkillDetective {
       this.log(`skill-detective: analysis failed: ${error instanceof Error ? error.message : String(error)}`)
       return
     }
-    if (analysis.need === null) return
+    if (analysis.need === null) {
+      const open = await this.openNeed(text, workspace)
+      if (open === null || open.covered) return
+      analysis = {
+        need: 'open',
+        label: open.label,
+        matched: open.tokens.slice(0, 4).join(' / '),
+        inferred: true,
+        candidates: [],
+        covered: null,
+        installedCount: 0,
+        searchText: open.searchText,
+      }
+    }
     // A need the user sent away never asks again until restored in settings.
     const suppressed = this.state.data?.suppressed ?? {}
     if (suppressed[analysis.need] !== undefined) return
     // A removed skill leaves a tombstone: until the record is removed, the same
     // functional group is treated as answered and is not searched again.
-    const needEntry = BY_NAME.get(analysis.need.candidates[0])
+    const firstCandidate = analysis.candidates[0]
+    const needEntry = firstCandidate === undefined ? undefined : BY_NAME.get(firstCandidate.name)
     const needGroup = needEntry === undefined ? '' : groupOf(needEntry)
     const deleted = this.state.data?.deleted ?? {}
     if (needGroup !== '' && Object.values(deleted).some(record => record.group === needGroup)) return
@@ -2610,6 +2745,7 @@ class SkillDetective {
       matched: analysis.matched,
       inferred: analysis.inferred === true,
       need: analysis.need,
+      searchText: analysis.searchText ?? '',
       candidates: analysis.candidates.map(item => ({
         name: item.name,
         installs: item.installs,
@@ -3001,6 +3137,7 @@ export function apply(ctx) {
               scope: typeof body.scope === 'string' ? body.scope : undefined,
               sessionId: String(body.sessionId ?? ''),
               workspace: body.workspace ?? '',
+              text: typeof body.text === 'string' ? body.text : undefined,
             })
             return sendJson(res, result.ok ? 200 : 200, { ...result })
           }
