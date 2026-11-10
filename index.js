@@ -366,7 +366,7 @@ const NEEDS = [
   {
     key: 'word',
     label: 'Word 文档',
-    keywords: ['word', 'docx', '文档', '报告', '合同'],
+    keywords: ['word', 'docx', '文档', '报告', '合同', '周报', '日报', '月报', '总结'],
     candidates: ['word-docx'],
   },
   {
@@ -400,6 +400,73 @@ const NEEDS = [
     candidates: ['sqlite-query'],
   },
 ]
+
+/**
+ * Semantic fallback: when no keyword hits, a task request still deserves a
+ * lookup. A message must contain an action verb, then the first matching intent
+ * decides which catalog skill should be offered. Order matters — specific
+ * artifacts (PDF, PPT, Excel) before the broad Word/文档 intent, because
+ * "写一份 PDF 报告" is a PDF request, not a Word request.
+ */
+const TASK_VERBS = [
+  '画', '绘制', '作图', '生成', '做', '写', '整理', '分析', '转换', '提取',
+  '爬', '采集', '抓取', '导出', '翻译', '压缩', '合并', '拆分', '截图',
+  '审查', '测试', '部署', '创建', '制作', '修改', '编辑', '汇总', '统计',
+  '格式化', '校验', '清洗', '扫描', '同步', '排版', '演示', '汇报',
+]
+
+const INTENTS = [
+  { skill: 'pdf-toolkit', test: /pdf|拆分文档|合并文档/i },
+  { skill: 'ppt-deck', test: /ppt|幻灯片|演示文稿|slide|汇报材料|路演/i },
+  { skill: 'excel-report', test: /excel|xlsx|表格|报表|统计表|数据透视/i },
+  { skill: 'csv-tools', test: /csv/i },
+  { skill: 'json-formatter', test: /json/i },
+  { skill: 'chart-maker', test: /图表|可视化|折线|柱状|饼图|走势图|散点|画.{0,6}图|作图|plot|chart/i },
+  { skill: 'image-optimizer', test: /图片|图像|照片|压缩图|webp|image/i },
+  { skill: 'crawler-kit', test: /爬虫|采集|抓取|爬取|crawl|scrap|爬一下|爬点|爬资料|爬数据/i },
+  { skill: 'sqlite-query', test: /sqlite|数据库|sql/i },
+  { skill: 'db-migrate', test: /迁移|建表|表结构|migrate/i },
+  { skill: 'git-tools', test: /git|分支|提交|版本管理|合并冲突/i },
+  { skill: 'docker-helper', test: /docker|容器|镜像|compose/i },
+  { skill: 'regex-tester', test: /正则|regex/i },
+  { skill: 'unit-test-helper', test: /单元测试|测试用例|覆盖率|test/i },
+  { skill: 'code-review', test: /代码审查|code review|评审/i },
+  { skill: 'log-analyzer', test: /日志|log/i },
+  { skill: 'secrets-scanner', test: /密钥|凭证|secret/i },
+  { skill: 'http-client', test: /http|接口|api|请求调试/i },
+  { skill: 'rss-reader', test: /rss|订阅/i },
+  { skill: 'sitemap-checker', test: /sitemap|死链|收录/i },
+  { skill: 'email-draft', test: /邮件|email|回信/i },
+  { skill: 'calendar-sync', test: /日历|日程|calendar|ics/i },
+  { skill: 'meeting-notes', test: /会议|纪要|meeting/i },
+  { skill: 'translate-docs', test: /翻译|translate/i },
+  { skill: 'form-builder', test: /表单|问卷|form/i },
+  { skill: 'markdown-writer', test: /markdown|md 文档|笔记/i },
+  { skill: 'html-report', test: /html|网页报告|单页/i },
+  { skill: 'data-cleaner', test: /数据清洗|清洗数据|去重|缺失值/i },
+  { skill: 'word-docx', test: /word|docx|文档|报告|周报|日报|月报|总结|合同|说明书/i },
+]
+
+/** Infer one intent from a message that no keyword matched. */
+function inferIntent(lower) {
+  if (!TASK_VERBS.some(verb => lower.includes(verb))) return null
+  for (const intent of INTENTS) {
+    if (!intent.test.test(lower)) continue
+    const entry = BY_NAME.get(intent.skill)
+    if (entry === undefined) continue
+    return {
+      need: {
+        key: `inferred-${entry.name}`,
+        label: entry.description ?? entry.name,
+        keywords: [],
+        candidates: [entry.name],
+      },
+      matched: '语义推断',
+      inferred: true,
+    }
+  }
+  return null
+}
 
 /* ------------------------------------------------------------------ */
 /* Small helpers                                                       */
@@ -975,6 +1042,8 @@ class SkillDetective {
     this.pending = new Map() // sessionId -> recommendation
     this.sessionWorkspaces = new Map() // sessionId -> absolute cwd
     this.auditedList = undefined // lazily audited marketplace catalog
+    this.lastRecommend = new Map() // sessionId -> timestamp of the last bubble
+    this.dismissed = new Map() // `${sessionId}:${needKey}` -> timestamp
     this.lastSearch = null
     this.log = (...args) => {
       try {
@@ -1091,9 +1160,9 @@ class SkillDetective {
     const lower = String(text ?? '').toLowerCase()
     for (const need of NEEDS) {
       const hit = need.keywords.find(keyword => lower.includes(keyword))
-      if (hit !== undefined) return { need, matched: hit }
+      if (hit !== undefined) return { need, matched: hit, inferred: false }
     }
-    return null
+    return inferIntent(lower)
   }
 
   async analyze(text, workspace) {
@@ -1128,6 +1197,7 @@ class SkillDetective {
       need: analysis.need.key,
       label: analysis.need.label,
       matched: analysis.matched,
+      inferred: analysis.inferred === true,
       candidates,
       covered,
       installedCount: installed.length,
@@ -1830,10 +1900,19 @@ class SkillDetective {
     // A requirement already covered by an installed, enabled skill stays silent:
     // the user asked for work, not for a second nudge about their own skills.
     if (analysis.covered !== null) return
+
+    const now = Date.now()
+    // Throttle: one bubble per session every 45s, and a need the user sent away
+    // stays quiet for 10 minutes.
+    if (now - (this.lastRecommend.get(sessionId) ?? 0) < 45_000) return
+    if (now - (this.dismissed.get(`${sessionId}:${analysis.need}`) ?? 0) < 10 * 60_000) return
+    this.lastRecommend.set(sessionId, now)
+
     this.pending.set(sessionId, {
       kind: 'recommend',
       label: analysis.label,
       matched: analysis.matched,
+      inferred: analysis.inferred === true,
       need: analysis.need,
       candidates: analysis.candidates.map(item => ({
         name: item.name,
@@ -1857,7 +1936,13 @@ class SkillDetective {
   }
 
   dismiss(sessionId) {
-    if (sessionId) this.pending.delete(sessionId)
+    if (sessionId) {
+      const pending = this.pending.get(sessionId)
+      if (pending !== undefined && typeof pending.need === 'string') {
+        this.dismissed.set(`${sessionId}:${pending.need}`, Date.now())
+      }
+      this.pending.delete(sessionId)
+    }
     return { ok: true }
   }
 }
@@ -2058,11 +2143,6 @@ export function apply(ctx) {
             return sendJson(res, 200, service.setCheckbox(String(body.sessionId ?? ''), body.enabled === true))
           }
 
-          if (route === '/analyze') {
-            const workspace = service.normalizeWorkspace(body.workspace ?? '')
-            return sendJson(res, 200, { ok: true, ...await service.analyze(String(body.text ?? ''), workspace) })
-          }
-
           if (route === '/dismiss') {
             return sendJson(res, 200, service.dismiss(String(body.sessionId ?? '')))
           }
@@ -2070,6 +2150,12 @@ export function apply(ctx) {
           if (route === '/search') {
             const workspace = service.normalizeWorkspace(body.workspace ?? '')
             return sendJson(res, 200, { ok: true, ...await service.search(String(body.query ?? ''), workspace) })
+          }
+
+          if (route === '/analyze') {
+            const text = String(body.text ?? '')
+            const workspace = service.normalizeWorkspace(body.workspace ?? '')
+            return sendJson(res, 200, { ok: true, analysis: await service.analyze(text, workspace) })
           }
 
           if (route === '/learn') {
