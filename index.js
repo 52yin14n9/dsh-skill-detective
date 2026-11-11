@@ -727,7 +727,7 @@ class ModelJudge {
     const timer = setTimeout(() => controller.abort(), Math.max(1_000, timeoutMs))
     let text = ''
     try {
-      const stream = route.llm.stream({
+      const request = {
         provider: route.provider,
         model: route.model,
         system,
@@ -735,7 +735,10 @@ class ModelJudge {
         maxTokens,
         temperature,
         signal: controller.signal,
-      })
+      }
+      // The provider adapter rejects auxiliary calls without a session route.
+      if (typeof options.sessionId === 'string' && options.sessionId !== '') request.sessionId = options.sessionId
+      const stream = route.llm.stream(request)
       for await (const chunk of stream) {
         if (chunk?.type === 'text-delta') {
           text += chunk.text ?? ''
@@ -2165,6 +2168,13 @@ class SkillDetective {
     return { ...scan, timeLabel: relativeTime(scan.at) }
   }
 
+  /** Session id used to route auxiliary model calls (reviews, need analysis). */
+  activeSessionId() {
+    if (typeof this.currentSessionId === 'string' && this.currentSessionId !== '') return this.currentSessionId
+    const ids = Object.keys(this.state.data?.sessions ?? {})
+    return ids.length > 0 ? ids[ids.length - 1] : ''
+  }
+
   async reviewFiles(files, meta = {}) {
     const hash = hashFiles(files)
     const cached = await this.auditCache.get(hash)
@@ -2177,6 +2187,7 @@ class SkillDetective {
       maxTokens: 700,
       temperature: 0,
       timeoutMs: 20_000,
+      sessionId: (typeof meta.sessionId === 'string' && meta.sessionId !== '' ? meta.sessionId : this.activeSessionId()) || 'skill-detective',
     })
     if (!result.ok) return { ok: false, hash, error: result.error }
     const verdict = normalizeAuditResult(result.data)
@@ -2191,7 +2202,7 @@ class SkillDetective {
    * message is a task and whether an enabled installed skill already covers it,
    * replacing the old keyword table / verb list / `-pro` name checks.
    */
-  async analyze(text, workspace) {
+  async analyze(text, workspace, sessionId = '') {
     const message = String(text ?? '').trim()
     const empty = {
       actionable: false,
@@ -2222,6 +2233,7 @@ class SkillDetective {
       maxTokens: 400,
       temperature: 0,
       timeoutMs: 12_000,
+      sessionId: sessionId !== '' ? sessionId : (this.activeSessionId() || 'skill-detective'),
     })
     if (!result.ok) {
       this.log(`skill-detective: need analysis failed: ${result.error}`)
@@ -3575,6 +3587,7 @@ class SkillDetective {
   /** Called from the session event feed for every committed user message. */
   async onUserMessage(session, message) {
     const sessionId = String(session.id)
+    this.currentSessionId = sessionId
     const text = extractText(message)
     const sourceKind = message?.source?.kind
     // Only a message the user typed is a recommendation trigger; the harness
@@ -3591,7 +3604,7 @@ class SkillDetective {
 
     let analysis
     try {
-      analysis = await this.analyze(text, workspace)
+      analysis = await this.analyze(text, workspace, sessionId)
     } catch (error) {
       this.log(`skill-detective: analysis failed: ${error instanceof Error ? error.message : String(error)}`)
       return
