@@ -6,7 +6,9 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  # `contents: write` is required by the release step below; npm publishing
+  # itself only needs the id-token for provenance.
+  contents: write
   id-token: write
 
 jobs:
@@ -29,3 +31,10 @@ jobs:
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
