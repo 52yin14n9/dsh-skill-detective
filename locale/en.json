@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Skill Detective",
-    "description": "Finds the skill a conversation needs, searches skills.sh, audits every candidate before install, scans workspaces and DSH skill folders after install, and manages installed skills (enable, disable, delete, scope) from a Web panel."
+    "description": "Uses a model to detect missing skills and check installed coverage, searches skills.sh, reviews the whole skill directory before install, caches a local skill index, and manages installed skills (enable, disable, delete, scope) from a Web panel."
   },
   "nav": "Skills",
   "navHint": "Skill Detective"

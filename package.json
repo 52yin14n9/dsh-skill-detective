@@ -1,10 +1,13 @@
 {
   "name": "dsh-skill-detective",
-  "version": "1.3.7",
+  "version": "1.4.0",
   "private": false,
   "type": "module",
-  "description": "Auto skill butler for DeepSeek Harness: detects a missing capability in the conversation, searches skills.sh, audits before install, and manages installed skills in a Web panel.",
+  "description": "Auto skill butler for DeepSeek Harness: model-assisted need detection, full-directory security review, a cached skill index, and installed-skill management in a Web panel.",
   "license": "MIT",
+  "scripts": {
+    "test": "node --test --test-isolation=none test/"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/CyberMind-labs/dsh-skill-detective.git"
@@ -25,6 +28,7 @@
     "catalog.js",
     "client.js",
     "cordis.patch.yml",
+    "prompts/*.md",
     "locale/*.json",
     "icon.svg",
     "README.md"

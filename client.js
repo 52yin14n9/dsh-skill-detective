@@ -114,6 +114,12 @@ window.__ModuleLoader__.load({
       remoteResults: '在线结果',
       remoteError: '在线搜索失败：',
       remoteInstalled: '已安装 {name}',
+      conflictTitle: '同名技能已存在',
+      conflictBody: '已安装「{name}」（{scope}）。要覆盖它，还是改名安装一个新技能？',
+      overwriteInstall: '覆盖安装',
+      renameInstall: '改名安装',
+      renamedTo: '已改名安装为 {name}',
+      conflictCancelled: '已取消安装',
       loadMore: '加载更多（已显示 {shown} / {total}）',
       allLoaded: '已全部加载（共 {n} 个）',
       learned: '技能学习',
@@ -284,6 +290,12 @@ window.__ModuleLoader__.load({
       remoteResults: 'Online results',
       remoteError: 'Online search failed: ',
       remoteInstalled: 'Installed {name}',
+      conflictTitle: 'A skill with this name already exists',
+      conflictBody: '「{name}」 is already installed ({scope}). Overwrite it, or install a renamed copy?',
+      overwriteInstall: 'Overwrite',
+      renameInstall: 'Install as a copy',
+      renamedTo: 'Installed as {name}',
+      conflictCancelled: 'Install cancelled',
       loadMore: 'Load more ({shown} / {total} shown)',
       allLoaded: 'All loaded ({n} skills)',
       learned: 'Learned',
@@ -427,6 +439,10 @@ window.__ModuleLoader__.load({
 .sd-main { min-width: 0; flex: 1; }
 .sd-name-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sd-name { font-weight: 600; font-size: 15px; color: #e8e8ea; }
+.sd-slug { font-size: 11px; color: #6d727b; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.sd-conflict { background: rgba(201,169,106,.08); border: 1px solid rgba(201,169,106,.32); border-radius: 11px; padding: 13px 15px; margin: 0 0 14px; }
+.sd-conflict-title { font-size: 13px; font-weight: 600; color: #e6c98a; margin-bottom: 4px; }
+.sd-conflict-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .sd-ver { font-size: 11px; color: #7a7f88; }
 .sd-badge { font-size: 11px; padding: 1px 7px; border-radius: 4px; background: #1c2230; color: #7aaaff; }
 .sd-badge.grey { background: #23252a; color: #8b8f98; }
@@ -848,7 +864,7 @@ window.__ModuleLoader__.load({
         if (sessionRef.current) await api('/dismiss', { body: { sessionId: sessionRef.current } }).catch(() => {})
       }
 
-      const start = async (needArg, labelArg) => {
+      const start = async (needArg, labelArg, conflictMode) => {
         const need = needArg ?? view?.need
         const label = labelArg ?? view?.label
         const searchText = view?.searchText ?? ''
@@ -880,9 +896,13 @@ window.__ModuleLoader__.load({
 
         try {
           const result = await api('/install', {
-            body: { need, sessionId: sessionRef.current, text: searchText },
+            body: { need, sessionId: sessionRef.current, text: searchText, ...(conflictMode ? { conflict: conflictMode } : {}) },
           })
           clearTimers()
+          if (!result.ok && result.code === 'name-conflict') {
+            setView({ kind: 'conflict', need, label, searchText, conflict: result.conflict })
+            return
+          }
           const real = Array.isArray(result.steps) ? result.steps : []
           if (real.length > 0) {
             // Reveal the host's real steps in order so the progress view shows
@@ -900,7 +920,7 @@ window.__ModuleLoader__.load({
           }
           if (result.ok) {
             doneRef.current = true
-            setView({ kind: 'done', name: result.name })
+            setView({ kind: 'done', name: result.displayName || result.name })
             if (sessionRef.current) api('/dismiss', { body: { sessionId: sessionRef.current } }).catch(() => {})
             schedule(() => {
               setFade(true)
@@ -937,6 +957,20 @@ window.__ModuleLoader__.load({
               step.detail ? h('div', { className: 'det' }, step.detail) : null,
             ),
           ))),
+        )
+      } else if (view.kind === 'conflict') {
+        const info = view.conflict ?? {}
+        body = h(React.Fragment, null,
+          h('div', { className: 'sd-bubble-text' }, '🐟 ', t('conflictTitle')),
+          h('div', { className: 'sd-hint', style: { marginBottom: 8 } },
+            t('conflictBody', { name: info.displayName || info.name || '', scope: scopeLabel(info.scope, t) })),
+          h('div', { className: 'sd-bubble-actions' },
+            info.canOverwrite !== false
+              ? h('button', { className: 'sd-pbtn main', type: 'button', onClick: () => start(view.need, view.label, 'overwrite') }, t('overwriteInstall'))
+              : null,
+            h('button', { className: 'sd-pbtn', type: 'button', onClick: () => start(view.need, view.label, 'rename') }, t('renameInstall')),
+            h('button', { className: 'sd-pbtn', type: 'button', onClick: () => setView(null) }, t('cancel')),
+          ),
         )
       } else if (view.kind === 'done') {
         body = h('div', { className: 'sd-done' }, '✓ ', t('doneLine', { name: view.name }))
@@ -981,6 +1015,7 @@ window.__ModuleLoader__.load({
       const { skill, t, onDetail, onOpen, onToggle, onAskDelete, onReplace, replacing, deleting, busy } = props
       const meta = ORIGIN_META[skill.origin] ?? ORIGIN_META.user
       const managed = skill.managed !== false
+      const shownName = skill.displayName || skill.name
       const status = !skill.enabled
         ? { text: t('disabled'), cls: 'grey' }
         : !managed
@@ -1007,7 +1042,7 @@ window.__ModuleLoader__.load({
 
       if (deleting) {
         return h('div', { className: 'sd-delbar' },
-          h('span', null, t('delConfirm', { name: skill.name })),
+          h('span', null, t('delConfirm', { name: shownName })),
           h('span', { className: 'sd-spacer' }),
           h('button', { className: 'sd-btn danger', type: 'button', onClick: () => onAskDelete(skill, 'confirm') }, t('confirmDel')),
           h('button', { className: 'sd-btn', type: 'button', onClick: () => onAskDelete(skill, 'cancel') }, t('cancel')),
@@ -1015,10 +1050,13 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { className: `sd-row${skill.enabled ? '' : ' off'}` },
-        h('div', { className: 'sd-icon' }, skillEmoji(skill.name)),
+        h('div', { className: 'sd-icon' }, skillEmoji(shownName)),
         h('div', { className: 'sd-main' },
           h('div', { className: 'sd-name-line' },
-            h('span', { className: 'sd-name' }, skill.name),
+            h('span', { className: 'sd-name' }, shownName),
+            skill.displayName && skill.displayName !== skill.name
+              ? h('span', { className: 'sd-slug', title: skill.name }, skill.name)
+              : null,
             h('span', { className: 'sd-ver' }, `v${skill.version}`),
             h('span', { className: `sd-badge${meta.badge ? ` ${meta.badge}` : ''}` }, t(meta.labelKey)),
           ),
@@ -1090,7 +1128,10 @@ window.__ModuleLoader__.load({
       const skill = data?.skill
       return h('div', { className: 'sd-overlay', onMouseDown: event => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'sd-modal', role: 'dialog', 'aria-modal': 'true' },
-          h('h3', null, name),
+          h('h3', null, skill?.displayName || name),
+          skill && skill.displayName && skill.displayName !== skill.name
+            ? h('div', { className: 'sd-slug', style: { marginBottom: 4 } }, skill.name)
+            : null,
           skill ? h('div', { className: 'sd-muted' }, `v${skill.version} · ${skill.origin === 'user' ? t('user') : skill.origin === 'market' ? t('marketOrigin') : skill.origin === 'learned' ? t('learned') : skill.origin === 'scan' ? t('scanOrigin') : t('plugin')} · ${scopeLabel(skill.scope, t)}`) : h('div', { className: 'sd-muted' }, '…'),
           error ? h('div', { style: { color: '#ff8080', fontSize: 12, marginTop: 8 } }, error) : null,
           skill && skill.managed === false ? h('div', { className: 'sd-hint' }, t('bundledHint')) : null,
@@ -1200,7 +1241,7 @@ window.__ModuleLoader__.load({
             const row = rows[skill.name]
             return h('div', { key: skill.name },
               h('div', { className: 'sd-srow' },
-                h('span', { className: 'nm' }, skill.name),
+                h('span', { className: 'nm' }, skill.displayName || skill.name),
                 h('select', {
                   className: 'sd-select',
                   value: row?.scope ?? 'workspace',
@@ -1418,9 +1459,9 @@ window.__ModuleLoader__.load({
                 className: `sd-pick${selected === skill.name ? ' on' : ''}`,
                 onClick: () => analyze(skill.name),
               },
-                h('span', { className: 'sd-icon', style: { width: 30, height: 30, flex: '0 0 30px', fontSize: 15, borderRadius: 8 } }, skillEmoji(skill.name)),
+                h('span', { className: 'sd-icon', style: { width: 30, height: 30, flex: '0 0 30px', fontSize: 15, borderRadius: 8 } }, skillEmoji(skill.displayName || skill.name)),
                 h('span', { style: { minWidth: 0, textAlign: 'left' } },
-                  h('span', { className: 'nm', style: { display: 'block' } }, skill.name),
+                  h('span', { className: 'nm', style: { display: 'block' } }, skill.displayName || skill.name),
                   h('span', { className: 'meta', style: { display: 'block' } }, `v${skill.version} · ${skill.category || '未分类'}`),
                 ),
               )),
@@ -1510,6 +1551,7 @@ window.__ModuleLoader__.load({
       const [remoteState, setRemoteState] = useState('idle')
       const [remoteError, setRemoteError] = useState('')
       const [remoteBusy, setRemoteBusy] = useState({})
+      const [conflict, setConflict] = useState(null)
 
       const load = useCallback(() => {
         api(`/market?workspace=${encodeURIComponent(workspace ?? '')}`)
@@ -1524,26 +1566,42 @@ window.__ModuleLoader__.load({
         load()
       }, [load])
 
-      const install = async skill => {
+      const install = async (skill, conflictMode) => {
         if (busy[skill.name]) return
         setBusy(current => ({ ...current, [skill.name]: true }))
         setPhase(current => ({ ...current, [skill.name]: 'auditing' }))
         const timer = setTimeout(() => setPhase(current => ({ ...current, [skill.name]: 'installing' })), 700)
         try {
-          const result = await api('/install', { body: { name: skill.name, origin: 'market', workspace } })
+          const result = await api('/install', {
+            body: {
+              name: skill.name,
+              origin: 'market',
+              workspace,
+              ...(conflictMode ? { conflict: conflictMode } : {}),
+            },
+          })
           clearTimeout(timer)
+          if (!result.ok && result.code === 'name-conflict') {
+            setPhase(current => ({ ...current, [skill.name]: '' }))
+            setConflict({ kind: 'market', skill, info: result.conflict })
+            return
+          }
           if (result.ok) {
+            const shown = result.displayName || result.name
             setPhase(current => ({ ...current, [skill.name]: 'done' }))
             setFailures(current => ({ ...current, [skill.name]: '' }))
-            setSkills(current => current.map(item => (item.name === skill.name ? { ...item, installed: true } : item)))
+            if (result.name === skill.name) {
+              setSkills(current => current.map(item => (item.name === skill.name ? { ...item, installed: true } : item)))
+            }
             onInstalled?.()
-            pushToast(`${t('marketInstalling', { name: skill.name })} ✓`)
+            pushToast(`${t('marketInstalling', { name: shown })} ✓`)
+            if (result.renamedFrom) pushToast(t('renamedTo', { name: shown }))
           } else {
             setPhase(current => ({ ...current, [skill.name]: '' }))
             const failedStep = Array.isArray(result.steps)
               ? [...result.steps].reverse().find(step => step.status === 'fail')
               : undefined
-            const message = failedStep?.detail ?? t('noneLine')
+            const message = failedStep?.detail ?? result.message ?? t('noneLine')
             setFailures(current => ({ ...current, [skill.name]: message }))
             pushToast(`${skill.name} · ${message}`)
           }
@@ -1555,6 +1613,18 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy(current => ({ ...current, [skill.name]: false }))
         }
+      }
+
+      const resolveConflict = async mode => {
+        const current = conflict
+        if (current === null) return
+        setConflict(null)
+        if (mode === 'cancel') {
+          pushToast(t('conflictCancelled'))
+          return
+        }
+        if (current.kind === 'remote') await installRemoteSkill(current.skill, mode)
+        else await install(current.skill, mode)
       }
 
       const filtered = useMemo(() => {
@@ -1590,12 +1660,28 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const installRemoteSkill = async item => {
+      const installRemoteSkill = async (item, conflictMode) => {
         if (remoteBusy[item.id] === true) return
         setRemoteBusy(current => ({ ...current, [item.id]: true }))
         try {
-          const result = await api('/remote/install', { body: { id: item.id, workspace } })
-          pushToast(`${t('remoteInstalled', { name: result.name })} ✓`)
+          const result = await api('/remote/install', {
+            body: {
+              id: item.id,
+              workspace,
+              ...(conflictMode ? { conflict: conflictMode } : {}),
+            },
+          })
+          if (!result.ok && result.code === 'name-conflict') {
+            setConflict({ kind: 'remote', skill: item, info: result.conflict })
+            return
+          }
+          if (!result.ok) {
+            pushToast(result.message ?? result.error ?? t('noneLine'))
+            return
+          }
+          const shown = result.displayName || result.name
+          pushToast(`${t('remoteInstalled', { name: shown })} ✓`)
+          if (result.renamedFrom) pushToast(t('renamedTo', { name: shown }))
           onInstalled?.()
           setRemoteSkills(current => current.filter(entry => entry.id !== item.id))
         } catch (err) {
@@ -1628,6 +1714,21 @@ window.__ModuleLoader__.load({
           }, remoteState === 'loading' ? t('searching') : t('remoteSearch')),
         ),
         remoteState === 'error' ? h('div', { className: 'sd-hint', style: { marginBottom: 12 } }, `${t('remoteError')}${remoteError}`) : null,
+        conflict ? h('div', { className: 'sd-conflict' },
+          h('div', { className: 'sd-conflict-title' }, t('conflictTitle')),
+          h('div', { className: 'sd-hint' },
+            t('conflictBody', {
+              name: conflict.info?.displayName || conflict.info?.name || '',
+              scope: scopeLabel(conflict.info?.scope, t),
+            })),
+          h('div', { className: 'sd-conflict-actions' },
+            conflict.info?.canOverwrite !== false
+              ? h('button', { className: 'sd-btn primary', type: 'button', onClick: () => resolveConflict('overwrite') }, t('overwriteInstall'))
+              : null,
+            h('button', { className: 'sd-btn', type: 'button', onClick: () => resolveConflict('rename') }, t('renameInstall')),
+            h('button', { className: 'sd-btn', type: 'button', onClick: () => resolveConflict('cancel') }, t('cancel')),
+          ),
+        ) : null,
         remoteSkills.length > 0 ? h('div', { className: 'sd-group' },
           h('div', { className: 'sd-group-title' }, `${t('remoteResults')} (${remoteSkills.length})`),
           remoteSkills.map(item => h('div', { key: item.id, className: 'sd-row' },
@@ -1738,7 +1839,9 @@ window.__ModuleLoader__.load({
         return installed.filter(skill => {
           if (filter !== 'all' && skill.origin !== filter) return false
           if (needle === '') return true
-          return skill.name.toLowerCase().includes(needle) || (skill.description ?? '').toLowerCase().includes(needle)
+          return skill.name.toLowerCase().includes(needle)
+            || String(skill.displayName ?? '').toLowerCase().includes(needle)
+            || (skill.description ?? '').toLowerCase().includes(needle)
         })
       }, [installed, filter, query])
 
