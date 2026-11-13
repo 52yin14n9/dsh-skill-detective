@@ -19,6 +19,11 @@ const {
   uniqueSkillName,
 } = __test
 
+const auditResult = overrides => ({
+  verdict: 'safe', severity: 'low', findings: [], summary: 'fixture',
+  capabilities: [], triggers: [], slug: '', ...overrides,
+})
+
 test('sanitizeSkillName keeps valid names and slugifies the rest', () => {
   assert.equal(sanitizeSkillName('word-docx'), 'word-docx')
   assert.equal(sanitizeSkillName('My Cool Skill'), 'my-cool-skill')
@@ -42,25 +47,25 @@ test('jsonFromText accepts bare and fenced replies', () => {
 })
 
 test('normalizeAuditResult blocks high findings and malicious verdicts', () => {
-  const malicious = normalizeAuditResult({ verdict: 'malicious', summary: 'x' })
+  const malicious = normalizeAuditResult(auditResult({ verdict: 'malicious', severity: 'high', summary: 'x' }))
   assert.equal(malicious.poison, true)
   assert.equal(malicious.severity, 'high')
 
-  const exfiltration = normalizeAuditResult({
+  const exfiltration = normalizeAuditResult(auditResult({
     verdict: 'safe',
     severity: 'low',
     findings: [{ file: 'run.sh', severity: 'high', rule: 'exfiltration', detail: 'post .env' }],
-  })
+  }))
   assert.equal(exfiltration.poison, true)
 
-  const clean = normalizeAuditResult({
+  const clean = normalizeAuditResult(auditResult({
     verdict: 'safe',
     findings: [],
     summary: '读取表格',
     capabilities: ['读取 xlsx'],
     triggers: ['打开表格'],
     slug: 'Sheet Reader',
-  })
+  }))
   assert.equal(clean.poison, false)
   assert.deepEqual(clean.capabilities, ['读取 xlsx'])
   assert.equal(clean.slug, 'sheet-reader')
@@ -129,6 +134,15 @@ test('buildNeedInput includes the message, installed summaries and catalog names
   assert.match(prompt, /pdf-toolkit/)
 })
 
+test('need prompt preserves the full user message and never exceeds its hard budget', () => {
+  const message = `${'正文'.repeat(2_100)}请保留末尾的 SQLite 任务条件`
+  const prompt = buildNeedInput(message, [])
+  assert.ok(prompt.includes(message))
+  assert.ok(prompt.length <= 9_000)
+  assert.equal(buildNeedInput('x'.repeat(9_001), []), null)
+  assert.equal(buildNeedInput('short message', [], { budget: 50 }), null)
+})
+
 /* ------------------------------------------------------------------ */
 /* Per-message path: local prefilter, bounded prompt, no disk walk     */
 /* ------------------------------------------------------------------ */
@@ -174,7 +188,11 @@ test('buildNeedInput keeps a bounded prompt with every installed name present', 
 
 test('analyze reads only the cached index and never triggers a disk scan', async () => {
   const { SkillDetective } = __test
-  const service = new SkillDetective({ get: () => undefined, logger: { info() {} } })
+  const liveScope = { effect: fn => fn(), skills: { register: () => () => {} } }
+  const service = new SkillDetective({
+    get: name => name === 'agents' ? { get: id => id === 'session-1' ? { ctx: liveScope } : undefined } : undefined,
+    logger: { info() {} },
+  })
   const installed = bulkSkills(200)
   installed[187] = {
     name: 'sqlite-query',
@@ -259,12 +277,13 @@ test('planAuditChunks never truncates a payload padded past the old per-file cap
 })
 
 test('mergeAuditResults keeps the worst verdict and merges findings', () => {
-  const safe = normalizeAuditResult({ verdict: 'safe', summary: '读取表格', capabilities: ['读 xlsx'], triggers: ['打开表格'] })
-  const bad = normalizeAuditResult({
+  const safe = normalizeAuditResult(auditResult({ verdict: 'safe', summary: '读取表格', capabilities: ['读 xlsx'], triggers: ['打开表格'] }))
+  const bad = normalizeAuditResult(auditResult({
     verdict: 'malicious',
+    severity: 'critical',
     findings: [{ file: 'scripts/run.sh', severity: 'critical', rule: 'exfiltration', detail: 'post .env' }],
-  })
-  const noisy = normalizeAuditResult({ verdict: 'suspicious', severity: 'medium', findings: [{ file: 'a.py', severity: 'medium', rule: 'obfuscation', detail: 'base64 blob' }] })
+  }))
+  const noisy = normalizeAuditResult(auditResult({ verdict: 'suspicious', severity: 'medium', findings: [{ file: 'a.py', severity: 'medium', rule: 'obfuscation', detail: 'base64 blob' }] }))
   const merged = mergeAuditResults([safe, bad, noisy])
   assert.equal(merged.verdict, 'malicious')
   assert.equal(merged.severity, 'critical')

@@ -122,10 +122,10 @@ window.__ModuleLoader__.load({
       conflictCancelled: '已取消安装',
       loadMore: '加载更多（已显示 {shown} / {total}）',
       allLoaded: '已全部加载（共 {n} 个）',
-      learned: '技能学习',
-      groupLearned: '技能学习',
-      learnTitle: '技能学习',
-      learnHint: '选一个技能，本鱼找同类技能、对比优缺点并整合成一份新技能。整合稿先过安全审查，未通过不写盘。',
+      learned: '结构整合',
+      groupLearned: '结构整合',
+      learnTitle: '技能文档整合',
+      learnHint: '保留相关技能的完整来源内容，按结构汇编为新文档。请先检查预览；文档质量分不代表能力匹配或效果提升。',
       learnPick: '选择要学习的技能',
       analyzePeers: '分析同类',
       analyzing: '分析中…',
@@ -137,9 +137,9 @@ window.__ModuleLoader__.load({
       generateMerged: '生成整合版并安装',
       generating: '生成中…',
       noPeers: '未查找到同类skill',
-      learnAll: '一键学习已有技能',
-      learnAllRunning: '批量学习中…',
-      learnAllDone: '完成：学习 {n} 个，跳过 {m} 个',
+      learnAll: '批量整合已有技能文档',
+      learnAllRunning: '批量整合中…',
+      learnAllDone: '完成：整合 {n} 个，跳过 {m} 个',
       updatesTitle: '检查更新',
       updatesHint: '对比市场目录的安装量与版本，判断是否有同类上位替代',
       checking: '检查中…',
@@ -149,7 +149,23 @@ window.__ModuleLoader__.load({
       installAlt: '安装替代',
       noUpdates: '没有可检查的技能',
       learnedOk: '已生成 {name}',
-      matchScore: '匹配度',
+      matchScore: '文档质量分',
+      tempSessionRequired: '临时作用域需要一个有效会话，请关闭设置并先选择用于审查的会话。',
+      workspaceRequired: '工作区作用域至少需要选择一个工作区。',
+      processingInstall: '正在安装',
+      processingHint: '等待服务端完成检索、审查和安装。',
+      installFailed: '安装失败',
+      networkFailed: '网络请求失败，请检查连接后重试。',
+      securityRejected: '安全审查拒绝了这次安装。',
+      auditUnavailable: '安全审查暂不可用，请稍后重试。',
+      sessionUnavailable: '当前会话不可用，技能尚未启用。',
+      writeFailed: '技能文件写入失败。',
+      resolveFailed: '技能下载或定位失败。',
+      completedWithWarnings: '操作已完成，但有警告',
+      preserveSourceFiles: '需要保留的完整来源',
+      reviewSession: '用于审查的会话',
+      chooseSession: '选择一个会话',
+      reviewSessionHint: '请在已配置模型的会话中启用“技能侦探”。若列表为空，先发送一条消息再返回此页；临时技能仅在所选会话中启用。',
       sourceAuthors: '来源作者',
       auditFailed: '整合稿未通过安全审查，已阻止安装',
       suppressedTitle: '不再提示的需求',
@@ -204,11 +220,11 @@ window.__ModuleLoader__.load({
       scanInfo: '上次扫描 {time} · 共 {n} 个',
       scanHint: '启动时自动扫描全部工作区、$DSH_HOME/skills 与插件自带的 skills 目录',
       scopeBundled: '插件自带',
-      bundledBadge: '只读',
-      bundledHint: '插件自带的技能：可查看与启停，删除和作用域移动已禁用',
+      bundledBadge: '受保护',
+      bundledHint: '插件自带的技能受所属插件管理；此处仅可查看，避免修改插件文件。',
       scanPath: '扫描位置',
       bundleTitle: '{provider} 插件内 skill',
-      bundleReadonly: '只读 · 插件自带',
+      bundleReadonly: '插件自带 · 仅查看',
       bundleCount: '{n} 个',
     }
 
@@ -298,10 +314,10 @@ window.__ModuleLoader__.load({
       conflictCancelled: 'Install cancelled',
       loadMore: 'Load more ({shown} / {total} shown)',
       allLoaded: 'All loaded ({n} skills)',
-      learned: 'Learned',
-      groupLearned: 'Learned skills',
-      learnTitle: 'Skill learning',
-      learnHint: 'Pick one skill; the host finds same-category peers, compares them and merges them into a new skill. The merged draft is audited before it is written.',
+      learned: 'Document merge',
+      groupLearned: 'Document merges',
+      learnTitle: 'Merge skill documents',
+      learnHint: 'Preserves complete source documents in a structured collection. Review the draft first; document quality does not measure task fit or improved capability.',
       learnPick: 'Choose a skill to learn from',
       analyzePeers: 'Analyze peers',
       analyzing: 'Analyzing…',
@@ -313,9 +329,9 @@ window.__ModuleLoader__.load({
       generateMerged: 'Build and install',
       generating: 'Building…',
       noPeers: 'No same-category skill found',
-      learnAll: 'Learn all installed skills',
-      learnAllRunning: 'Learning…',
-      learnAllDone: 'Done: {n} learned, {m} skipped',
+      learnAll: 'Merge installed skill documents',
+      learnAllRunning: 'Merging…',
+      learnAllDone: 'Done: {n} merged, {m} skipped',
       updatesTitle: 'Check updates',
       updatesHint: 'Compare installed skills with the marketplace catalog for newer versions or stronger alternatives',
       checking: 'Checking…',
@@ -325,7 +341,23 @@ window.__ModuleLoader__.load({
       installAlt: 'Install',
       noUpdates: 'No skills to check',
       learnedOk: 'Created {name}',
-      matchScore: 'match',
+      matchScore: 'Document quality',
+      tempSessionRequired: 'Temporary scope needs a valid session. Close settings and choose a session for review first.',
+      workspaceRequired: 'Select at least one workspace for workspace scope.',
+      processingInstall: 'Installing',
+      processingHint: 'Waiting for the server to finish search, review and installation.',
+      installFailed: 'Installation failed',
+      networkFailed: 'Network request failed. Check your connection and retry.',
+      securityRejected: 'The security review rejected this installation.',
+      auditUnavailable: 'Security review is unavailable. Retry later.',
+      sessionUnavailable: 'The current session is unavailable. The skill has not been enabled.',
+      writeFailed: 'Writing the skill files failed.',
+      resolveFailed: 'The skill could not be located or downloaded.',
+      completedWithWarnings: 'Operation completed with warnings',
+      preserveSourceFiles: 'Complete sources that must be preserved',
+      reviewSession: 'Session for review',
+      chooseSession: 'Choose a session',
+      reviewSessionHint: 'Enable Skill Detective in a conversation with a configured model. If the list is empty, send a message and return here. Temporary skills apply only to the selected session.',
       sourceAuthors: 'Source authors',
       auditFailed: 'Merged draft failed the security audit; install blocked',
       suppressedTitle: 'Suppressed needs',
@@ -380,11 +412,11 @@ window.__ModuleLoader__.load({
       scanInfo: 'Scanned {time} · {n} skills',
       scanHint: 'Scans every workspace, $DSH_HOME/skills and bundled plugin skill folders on load',
       scopeBundled: 'Bundled',
-      bundledBadge: 'Read-only',
-      bundledHint: 'Bundled with a plugin: view and toggle are allowed, delete and scope moves are disabled',
+      bundledBadge: 'Protected',
+      bundledHint: 'Bundled skills are managed by their plugin. View only here to preserve plugin files.',
       scanPath: 'Scan locations',
       bundleTitle: '{provider} plugin skills',
-      bundleReadonly: 'read-only · bundled',
+      bundleReadonly: 'bundled · view only',
       bundleCount: '{n}',
     }
 
@@ -403,6 +435,7 @@ window.__ModuleLoader__.load({
 
     const CSS = `
 .sd-root { color: #e8e8ea; font-size: 14px; line-height: 1.6; }
+.sd-modal, .sd-modal h3, .sd-modal h4, .sd-modal .nm, .sd-bubble, .sd-panel, .sd-row, .sd-card { color: #e8e8ea; }
 .sd-page { width: 100%; height: 100%; min-height: 0; flex: 1 1 auto; box-sizing: border-box; overflow-y: auto; background: transparent; }
 .sd-page-inner { max-width: 1080px; margin: 0 auto; padding: 22px 32px 60px; }
 .sd-topbar { display: flex; align-items: center; gap: 10px; padding: 4px 0 20px; }
@@ -677,6 +710,8 @@ window.__ModuleLoader__.load({
     /* Host bridge                                                       */
     /* ---------------------------------------------------------------- */
 
+    const warningListeners = new Set()
+
     async function api(route, options) {
       const response = await fetch(`${API}${route}`, {
         method: options?.method ?? (options?.body === undefined ? 'GET' : 'POST'),
@@ -691,16 +726,100 @@ window.__ModuleLoader__.load({
         payload = null
       }
       if (payload === null) throw new Error(`HTTP ${response.status}`)
-      if (payload.ok === false) {
+      if (payload.ok === false && options?.allowFailure === true && response.ok) return payload
+      if (!response.ok || payload.ok === false) {
         const failed = Array.isArray(payload.steps)
           ? [...payload.steps].reverse().find(step => step.status === 'fail')
           : undefined
         const message = typeof payload.error === 'string'
           ? (failed?.detail ?? payload.error)
           : (payload.error?.message ?? payload.message ?? `HTTP ${response.status}`)
-        throw new Error(message)
+        const error = new Error(message)
+        error.code = payload.code ?? payload.error?.code ?? (typeof payload.error === 'string' ? payload.error : '')
+        error.payload = payload
+        throw error
+      }
+      const warnings = Array.isArray(payload.warnings)
+        ? payload.warnings.filter(warning => typeof warning === 'string' && warning.trim() !== '')
+        : []
+      if (warnings.length > 0) {
+        for (const listener of warningListeners) {
+          try { listener(warnings) } catch { /* A notice must not change a committed operation's result. */ }
+        }
       }
       return payload
+    }
+
+    function ApiWarnings({ t }) {
+      const [warnings, setWarnings] = useState([])
+      useEffect(() => {
+        const receive = next => setWarnings(current => [...new Set([...current, ...next])])
+        warningListeners.add(receive)
+        return () => warningListeners.delete(receive)
+      }, [])
+      if (warnings.length === 0) return null
+      return h('div', {
+        className: 'sd-api-warnings', role: 'status', 'aria-live': 'polite',
+        style: { position: 'fixed', top: 20, right: 20, maxWidth: 480, maxHeight: '40vh', overflowY: 'auto', pointerEvents: 'auto', padding: 16, background: '#29231a', border: '1px solid #c9a96a', color: '#ffe4ac', borderRadius: 10, zIndex: 100 },
+      },
+        h('strong', null, t('completedWithWarnings')),
+        h('ul', null, warnings.map(message => h('li', { key: message }, message))),
+        h('button', { className: 'sd-btn', type: 'button', onClick: () => setWarnings([]) }, t('close')),
+      )
+    }
+
+    function skillSelector(skill) {
+      return { name: skill.name, instanceId: skill.instanceId || undefined, path: skill.path || undefined }
+    }
+
+    function skillKey(skill) {
+      return skill.instanceId || `${skill.scope ?? ''}:${skill.path || skill.name}`
+    }
+
+    function workspacePaths(skill, fallback) {
+      return [...new Set((Array.isArray(skill.workspaces) && skill.workspaces.length > 0
+        ? skill.workspaces : [skill.workspace || fallback]).filter(Boolean))]
+    }
+
+    function sameWorkspaces(left, right) {
+      const normalize = list => [...new Set((list ?? []).map(path => {
+        const value = String(path).replace(/\\/g, '/').replace(/\/$/, '')
+        return /^[a-z]:\//i.test(value) ? value.toLowerCase() : value
+      }))].sort()
+      return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right))
+    }
+
+    function scopeChanges(installed, rows, workspace, sessionId, t) {
+      const changes = []
+      for (const skill of installed) {
+        if (skill.managed === false) continue
+        const row = rows[skillKey(skill)]
+        if (!row) continue
+        const currentScope = ['global', 'temp'].includes(skill.scope) ? skill.scope : 'workspace'
+        const changed = row.scope !== currentScope
+          || (row.scope === 'workspace' && !sameWorkspaces(row.workspaces, workspacePaths(skill, workspace)))
+          || (row.scope === 'temp' && sessionId && skill.sessionId !== sessionId)
+        if (!changed) continue
+        if (row.scope === 'temp' && !sessionId) throw new Error(t('tempSessionRequired'))
+        if (row.scope === 'workspace' && (row.workspaces ?? []).length === 0) throw new Error(t('workspaceRequired'))
+        changes.push({ ...skillSelector(skill), scope: row.scope, workspaces: row.workspaces, workspace, sessionId: row.scope === 'temp' ? sessionId : undefined })
+      }
+      return changes
+    }
+
+    function installFailure(payload, t) {
+      const code = payload?.code || payload?.error?.code || (typeof payload?.error === 'string' ? payload.error : '')
+      const failed = Array.isArray(payload?.steps) ? [...payload.steps].reverse().find(step => step.status === 'fail') : null
+      const keys = {
+        poison: 'securityRejected', 'all-poisoned': 'securityRejected', 'audit-unavailable': 'auditUnavailable',
+        'session-unavailable': 'sessionUnavailable', 'invalid-session': 'sessionUnavailable',
+        'registration-failed': 'sessionUnavailable', 'write-failed': 'writeFailed', 'resolve-failed': 'resolveFailed',
+      }
+      return {
+        kind: ['none-found', 'no-need', 'no-peers'].includes(code) ? 'none' : 'failed',
+        message: failed?.detail || payload?.message || payload?.error?.message || (keys[code] ? t(keys[code]) : t('installFailed')),
+        code,
+      }
     }
 
     function useToasts() {
@@ -791,14 +910,6 @@ window.__ModuleLoader__.load({
     /* Recommendation bubble                                             */
     /* ---------------------------------------------------------------- */
 
-    const FALLBACK_STEPS = [
-      { id: 'analyze', labelKey: 'stepAnalyze' },
-      { id: 'search', labelKey: 'stepSearch' },
-      { id: 'audit', labelKey: 'stepAudit' },
-      { id: 'download', labelKey: 'stepDownload' },
-      { id: 'enable', labelKey: 'stepEnable' },
-    ]
-
     function DetectiveDock(props) {
       const { t } = props
       const [view, setView] = useState(null)
@@ -871,31 +982,12 @@ window.__ModuleLoader__.load({
         if (need === undefined || label === undefined) return
         doneRef.current = false
         setFade(false)
-        setSteps(FALLBACK_STEPS.map(step => ({
-          id: step.id,
-          label: t(step.labelKey),
-          detail: step.id === 'analyze' ? `识别到「${label}」需求` : '',
-          status: 'pending',
-        })))
+        setSteps([{ id: 'install', label: t('processingInstall'), detail: t('processingHint'), status: 'run' }])
         setView({ kind: 'progress' })
-
-        // Light up the visual steps while the host works.
-        let cursor = 0
-        const advance = () => {
-          cursor += 1
-          setSteps(current => current.map((step, index) => {
-            if (index < cursor) return { ...step, status: step.status === 'fail' ? 'fail' : 'ok' }
-            if (index === cursor) return { ...step, status: 'run' }
-            return step
-          }))
-          if (cursor < FALLBACK_STEPS.length) {
-            timerRef.current = setTimeout(advance, 420)
-          }
-        }
-        timerRef.current = setTimeout(advance, 380)
 
         try {
           const result = await api('/install', {
+            allowFailure: true,
             body: { need, sessionId: sessionRef.current, text: searchText, ...(conflictMode ? { conflict: conflictMode } : {}) },
           })
           clearTimers()
@@ -905,18 +997,13 @@ window.__ModuleLoader__.load({
           }
           const real = Array.isArray(result.steps) ? result.steps : []
           if (real.length > 0) {
-            // Reveal the host's real steps in order so the progress view shows
-            // what actually happened instead of a single instant jump.
             const mapped = real.map(step => ({
               id: step.id,
               label: step.label,
               detail: step.detail,
               status: step.status === 'fail' ? 'fail' : step.status === 'skip' ? 'skip' : 'ok',
             }))
-            for (let index = 1; index <= mapped.length; index += 1) {
-              setSteps(mapped.slice(0, index))
-              await new Promise(resolve => setTimeout(resolve, 400))
-            }
+            setSteps(mapped)
           }
           if (result.ok) {
             doneRef.current = true
@@ -927,12 +1014,13 @@ window.__ModuleLoader__.load({
               schedule(() => setView(null), 420)
             }, 4200)
           } else {
-            setView({ kind: 'none', need, label })
+            setView({ ...installFailure(result, t), need, label, searchText })
           }
         } catch (error) {
           clearTimers()
-          setSteps(current => current.map((step, index) => (index === 0 && step.status === 'pending' ? { ...step, status: 'fail', detail: String(error.message ?? error) } : step)))
-          setView({ kind: 'none', need, label })
+          const failure = error.payload ? installFailure(error.payload, t) : { kind: 'failed', message: error.name === 'TypeError' ? t('networkFailed') : error.message || t('networkFailed') }
+          setSteps([{ id: 'install', label: t('installFailed'), status: 'fail', detail: failure.message }])
+          setView({ ...failure, need, label, searchText })
         }
       }
 
@@ -976,9 +1064,10 @@ window.__ModuleLoader__.load({
         body = h('div', { className: 'sd-done' }, '✓ ', t('doneLine', { name: view.name }))
       } else if (view.kind === 'covered') {
         body = h('div', { className: 'sd-bubble-text' }, '✓ ', t('coveredLine', { name: view.name }))
-      } else if (view.kind === 'none') {
+      } else if (view.kind === 'none' || view.kind === 'failed') {
         body = h(React.Fragment, null,
-          h('div', { className: 'sd-bubble-text' }, '🐟 ', t('noneLine')),
+          h('div', { className: 'sd-bubble-text', role: view.kind === 'failed' ? 'alert' : undefined },
+            view.kind === 'failed' ? `${t('installFailed')}：${view.message}` : t('noneLine')),
           h('div', { className: 'sd-bubble-actions' },
             h('button', { className: 'sd-pbtn main', type: 'button', onClick: () => start(view.need, view.label) }, t('retry')),
             h('button', { className: 'sd-pbtn', type: 'button', onClick: () => setView(null) }, t('close')),
@@ -1071,11 +1160,11 @@ window.__ModuleLoader__.load({
               className: 'sd-replace',
               type: 'button',
               title: t('replaceHint'),
-              disabled: busy || replacing === skill.name,
+              disabled: busy || replacing === skillKey(skill),
               onClick: () => onReplace(skill),
             },
-              h('span', { className: 'sd-checkbox' }, replacing === skill.name ? '…' : ''),
-              h('span', null, replacing === skill.name ? t('replacing') : t('replaceAsk')),
+              h('span', { className: 'sd-checkbox' }, replacing === skillKey(skill) ? '…' : ''),
+              h('span', null, replacing === skillKey(skill) ? t('replacing') : t('replaceAsk')),
             )
             : null,
         ),
@@ -1099,7 +1188,8 @@ window.__ModuleLoader__.load({
     }
 
     function DetailModal(props) {
-      const { name, workspace, t, onClose, onOpen, onToggle, onDelete } = props
+      const { skill: selectedSkill, workspace, sessionId, t, onClose, onOpen, onToggle, onDelete } = props
+      const name = selectedSkill.name
       const [data, setData] = useState(null)
       const [error, setError] = useState('')
 
@@ -1113,7 +1203,9 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         let alive = true
-        api(`/detail?name=${encodeURIComponent(name)}&workspace=${encodeURIComponent(workspace ?? '')}`)
+        const query = new URLSearchParams({ ...skillSelector(selectedSkill), workspace: workspace ?? '', sessionId: sessionId || '' })
+        for (const key of ['instanceId', 'path']) if (!selectedSkill[key]) query.delete(key)
+        api(`/detail?${query}`)
           .then(payload => {
             if (alive) setData(payload)
           })
@@ -1123,7 +1215,7 @@ window.__ModuleLoader__.load({
         return () => {
           alive = false
         }
-      }, [name, workspace])
+      }, [name, selectedSkill.instanceId, selectedSkill.path, workspace, sessionId])
 
       const skill = data?.skill
       return h('div', { className: 'sd-overlay', onMouseDown: event => { if (event.target === event.currentTarget) onClose() } },
@@ -1149,7 +1241,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'sd-h4' }, t('fileTree')),
             h('div', { className: 'sd-tree' }, data.tree.map((item, index) => h('div', { key: index }, `${'  '.repeat(Math.max(0, item.depth))}${item.type === 'dir' ? '▸ ' : '· '}${item.path.split('/').pop()}${item.size !== undefined ? `  (${item.size} B)` : ''}`))),
             h('div', { className: 'sd-h4' }, `${t('preview')} · ${data.previewBytes} B`),
-            h('pre', { className: 'sd-pre' }, data.preview.slice(0, 20000)),
+            h('pre', { className: 'sd-pre' }, data.preview),
           ) : null,
           h('div', { className: 'sd-modal-foot' },
             skill && skill.path ? h('button', { className: 'sd-btn', type: 'button', onClick: () => { onOpen(skill) } }, t('openFolder')) : null,
@@ -1162,7 +1254,7 @@ window.__ModuleLoader__.load({
     }
 
     function SettingsModal(props) {
-      const { data, t, onClose, onSaved } = props
+      const { data, t, onClose, onSaved, sessionId = '' } = props
       const workspaces = data.workspaces ?? []
       const [defaultScope, setDefaultScope] = useState(data.settings.defaultScope ?? 'workspace')
       const [rows, setRows] = useState(() => {
@@ -1170,7 +1262,7 @@ window.__ModuleLoader__.load({
         for (const skill of data.installed) {
           // Read-only (bundled / inline) skills have no movable directory.
           if (skill.managed === false) continue
-          map[skill.name] = { scope: skill.scope === 'global' ? 'global' : skill.scope === 'temp' ? 'temp' : 'workspace', workspaces: [data.workspace] }
+          map[skillKey(skill)] = { scope: skill.scope === 'global' ? 'global' : skill.scope === 'temp' ? 'temp' : 'workspace', workspaces: workspacePaths(skill, data.workspace) }
         }
         return map
       })
@@ -1200,17 +1292,9 @@ window.__ModuleLoader__.load({
         setSaving(true)
         setError('')
         try {
+          const changes = scopeChanges(data.installed, rows, data.workspace, sessionId, t)
           await api('/settings', { body: { defaultScope } })
-          for (const skill of data.installed) {
-            if (skill.managed === false) continue
-            const row = rows[skill.name]
-            if (row === undefined) continue
-            const changed = row.scope !== (skill.scope === 'global' ? 'global' : skill.scope === 'temp' ? 'temp' : 'workspace')
-            if (!changed) continue
-            await api('/scope', {
-              body: { name: skill.name, scope: row.scope, workspaces: row.workspaces, workspace: data.workspace },
-            })
-          }
+          for (const body of changes) await api('/scope', { body })
           onSaved()
           onClose()
         } catch (err) {
@@ -1237,17 +1321,19 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'sd-h4' }, t('scopeRows')),
           h('div', { className: 'sd-muted', style: { marginBottom: 6 } }, t('scopeRowsHint')),
+          !sessionId ? h('div', { className: 'sd-hint', style: { marginBottom: 8 } }, t('tempSessionRequired')) : null,
           data.installed.filter(skill => skill.managed !== false).map(skill => {
-            const row = rows[skill.name]
-            return h('div', { key: skill.name },
+            const key = skillKey(skill)
+            const row = rows[key]
+            return h('div', { key },
               h('div', { className: 'sd-srow' },
                 h('span', { className: 'nm' }, skill.displayName || skill.name),
                 h('select', {
                   className: 'sd-select',
                   value: row?.scope ?? 'workspace',
-                  onChange: event => setRow(skill.name, { scope: event.target.value }),
+                  onChange: event => setRow(key, { scope: event.target.value }),
                 },
-                  h('option', { value: 'temp' }, t('scopeTemp')),
+                  h('option', { value: 'temp', disabled: !sessionId }, t('scopeTemp')),
                   h('option', { value: 'workspace' }, t('scopeWorkspace')),
                   h('option', { value: 'global' }, t('scopeGlobal')),
                 ),
@@ -1259,7 +1345,7 @@ window.__ModuleLoader__.load({
                     key: item.path,
                     type: 'button',
                     className: `sd-wschip${active ? ' on' : ''}`,
-                    onClick: () => setRow(skill.name, {
+                    onClick: () => setRow(key, {
                       workspaces: active
                         ? (row.workspaces ?? []).filter(path => path !== item.path)
                         : [...(row.workspaces ?? []), item.path],
@@ -1291,14 +1377,14 @@ window.__ModuleLoader__.load({
     }
 
     function UpdatesModal(props) {
-      const { t, workspace, onClose, onInstalled, pushToast } = props
+      const { t, workspace, sessionId = '', onClose, onInstalled, pushToast } = props
       const [items, setItems] = useState(null)
       const [error, setError] = useState('')
       const [busy, setBusy] = useState({})
 
       useEffect(() => {
         let alive = true
-        api(`/updates?workspace=${encodeURIComponent(workspace ?? '')}`)
+        api(`/updates?workspace=${encodeURIComponent(workspace ?? '')}&sessionId=${encodeURIComponent(sessionId)}`)
           .then(payload => {
             if (!alive) return
             setItems(payload.updates)
@@ -1310,7 +1396,7 @@ window.__ModuleLoader__.load({
         return () => {
           alive = false
         }
-      }, [workspace])
+      }, [workspace, sessionId])
 
       useEffect(() => {
         const onKey = event => {
@@ -1321,9 +1407,10 @@ window.__ModuleLoader__.load({
       }, [onClose])
 
       const install = async name => {
+        if (!sessionId) { pushToast(t('reviewSessionHint')); return }
         setBusy(current => ({ ...current, [name]: true }))
         try {
-          const result = await api('/install', { body: { name, origin: 'market', workspace } })
+          const result = await api('/install', { body: { name, origin: 'market', workspace, sessionId } })
           if (result.ok) {
             pushToast(`${t('learnedOk', { name: result.name })} ✓`)
             onInstalled?.()
@@ -1344,7 +1431,7 @@ window.__ModuleLoader__.load({
           error ? h('div', { style: { color: '#ff8080', fontSize: 12.5, marginTop: 10 } }, error) : null,
           items === null ? h('div', { className: 'sd-hint', style: { padding: '22px 0' } }, t('checking')) : null,
           items !== null && items.length === 0 ? h('div', { className: 'sd-hint', style: { padding: '22px 0' } }, t('noUpdates')) : null,
-          items !== null && items.length > 0 ? h('div', { style: { marginTop: 12 } }, items.map(item => h('div', { key: item.name, className: 'sd-upd-row' },
+          items !== null && items.length > 0 ? h('div', { style: { marginTop: 12 } }, items.map(item => h('div', { key: skillKey(item), className: 'sd-upd-row' },
             h('div', { style: { minWidth: 0, flex: 1 } },
               h('div', { className: 'sd-name-line' },
                 h('span', { className: 'nm' }, item.name),
@@ -1365,7 +1452,7 @@ window.__ModuleLoader__.load({
                   h('span', { className: 'sd-tag info' }, t('updateBetter', { name: item.suggestion.name })),
                   item.suggestion && !item.suggestion.installed
                     ? h('button', {
-                      className: 'sd-btn primary', type: 'button', disabled: busy[item.suggestion.name] === true,
+                      className: 'sd-btn primary', type: 'button', disabled: !sessionId || busy[item.suggestion.name] === true,
                       onClick: () => install(item.suggestion.name),
                     }, busy[item.suggestion.name] === true ? t('installing') : t('installAlt'))
                     : null,
@@ -1379,8 +1466,8 @@ window.__ModuleLoader__.load({
     }
 
     function LearnView(props) {
-      const { t, workspace, installed, onBack, onInstalled, pushToast } = props
-      const [selected, setSelected] = useState('')
+      const { t, workspace, sessionId = '', installed, onBack, onInstalled, pushToast } = props
+      const [selected, setSelected] = useState(null)
       const [analysis, setAnalysis] = useState(null)
       const [loading, setLoading] = useState(false)
       const [error, setError] = useState('')
@@ -1390,14 +1477,15 @@ window.__ModuleLoader__.load({
       const [authorModal, setAuthorModal] = useState(null)
       const [showDraft, setShowDraft] = useState(false)
 
-      const analyze = async name => {
-        setSelected(name)
+      const analyze = async skill => {
+        if (!sessionId) { setError(t('reviewSessionHint')); return }
+        setSelected(skill)
         setAnalysis(null)
         setError('')
         setShowDraft(false)
         setLoading(true)
         try {
-          const result = await api('/learn', { body: { name, workspace, dryRun: true } })
+          const result = await api('/learn', { body: { ...skillSelector(skill), workspace, sessionId, dryRun: true } })
           setAnalysis(result)
         } catch (err) {
           setError(err.message)
@@ -1407,14 +1495,14 @@ window.__ModuleLoader__.load({
       }
 
       const build = async () => {
-        if (selected === '') return
+        if (selected === null || !sessionId || analysis?.previewOnly === true || analysis?.code === 'unsupported-learning-assets' || !analysis?.merged) return
         setBuilding(true)
         try {
-          const result = await api('/learn', { body: { name: selected, workspace } })
+          const result = await api('/learn', { body: { ...skillSelector(selected), workspace, sessionId } })
           pushToast(t('learnedOk', { name: result.name }))
           onInstalled?.()
           setAnalysis(null)
-          setSelected('')
+          setSelected(null)
         } catch (err) {
           pushToast(err.message)
         } finally {
@@ -1423,10 +1511,11 @@ window.__ModuleLoader__.load({
       }
 
       const learnAll = async () => {
+        if (!sessionId) { pushToast(t('reviewSessionHint')); return }
         setBatchRunning(true)
         setBatch(null)
         try {
-          const result = await api('/learn-all', { body: { workspace } })
+          const result = await api('/learn-all', { body: { workspace, sessionId } })
           setBatch(result)
           onInstalled?.()
           pushToast(t('learnAllDone', { n: result.learned, m: result.skipped }))
@@ -1439,6 +1528,8 @@ window.__ModuleLoader__.load({
 
       const authors = analysis?.merged?.authors ?? []
       const visibleAuthors = authors.slice(0, 3)
+      const peers = Array.isArray(analysis?.peers) ? analysis.peers : []
+      const previewOnly = analysis?.previewOnly === true || analysis?.code === 'unsupported-learning-assets'
 
       return h('div', { className: 'sd-page-inner' },
         h('div', { className: 'sd-topbar' },
@@ -1446,7 +1537,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'sd-title' }, t('learnTitle')),
           h('span', { className: 'sd-sub' }, t('learnHint')),
           h('span', { className: 'sd-spacer' }),
-          h('button', { className: 'sd-toplink', type: 'button', disabled: batchRunning, onClick: learnAll },
+          h('button', { className: 'sd-toplink', type: 'button', disabled: !sessionId || batchRunning, onClick: learnAll },
             iconMarket(15), batchRunning ? t('learnAllRunning') : t('learnAll')),
         ),
         h('div', { className: 'sd-learn-grid' },
@@ -1454,10 +1545,11 @@ window.__ModuleLoader__.load({
             h('div', { className: 'sd-group-title' }, t('learnPick')),
             h('div', { className: 'sd-learn-list' },
               installed.map(skill => h('button', {
-                key: skill.name,
+                key: skillKey(skill),
                 type: 'button',
-                className: `sd-pick${selected === skill.name ? ' on' : ''}`,
-                onClick: () => analyze(skill.name),
+                disabled: !sessionId,
+                className: `sd-pick${selected && skillKey(selected) === skillKey(skill) ? ' on' : ''}`,
+                onClick: () => analyze(skill),
               },
                 h('span', { className: 'sd-icon', style: { width: 30, height: 30, flex: '0 0 30px', fontSize: 15, borderRadius: 8 } }, skillEmoji(skill.displayName || skill.name)),
                 h('span', { style: { minWidth: 0, textAlign: 'left' } },
@@ -1470,14 +1562,26 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'sd-learn-main' },
             h('div', { className: 'sd-group-title' }, analysis !== null
-              ? `${t('peersTitle')} · ${analysis.peers.length + 1}`
+              ? `${t('peersTitle')} · ${peers.length + 1}`
               : '\u00a0'),
             error !== '' ? h('div', { className: 'sd-panel' }, h('div', { style: { color: '#ff9a9a', fontSize: 13 } }, error)) : null,
             loading ? h('div', { className: 'sd-panel' }, h('div', { className: 'sd-hint' }, t('analyzing'))) : null,
             analysis !== null ? h(React.Fragment, null,
+              previewOnly ? h('div', { className: 'sd-panel', role: 'alert' },
+                h('div', { style: { color: '#e6c98a', marginBottom: 8 } }, analysis.message),
+                h('h4', null, t('preserveSourceFiles')),
+                h('ul', null, (analysis.preserveSources ?? []).map(source => h('li', { key: source.instanceId || source.path || source.name },
+                  h('strong', null, source.name),
+                  source.path ? h('div', { className: 'sd-hint' }, source.path) : null,
+                  source.reason ? h('div', { className: 'sd-hint' }, source.reason) : null,
+                  h('ul', null, (source.files ?? []).map(file => h('li', { key: typeof file === 'string' ? file : file.path },
+                    typeof file === 'string' ? file : `${file.path}${file.type === 'dir' ? '/' : ''}`,
+                  ))),
+                ))),
+              ) : null,
               h('div', { className: 'sd-panel' },
-                h('div', { className: 'sd-hint', style: { marginBottom: 8 } }, `${analysis.source.name} · ${analysis.source.author || '—'} · ${analysis.source.category || ''}`),
-                h('div', null, analysis.peers.map(peer => h('div', { key: peer.name, className: 'sd-peer' },
+                h('div', { className: 'sd-hint', style: { marginBottom: 8 } }, `${analysis.source?.name || selected?.name || ''} · ${analysis.source?.author || '—'} · ${analysis.source?.category || ''}`),
+                h('div', null, peers.map(peer => h('div', { key: peer.name, className: 'sd-peer' },
                   h('div', { style: { minWidth: 0, flex: 1 } },
                     h('div', { className: 'sd-name-line' },
                       h('span', { className: 'nm' }, peer.name),
@@ -1499,16 +1603,16 @@ window.__ModuleLoader__.load({
                     : null,
                 ),
                 h('div', { className: 'sd-learn-actions' },
-                  h('button', { className: 'sd-btn', type: 'button', onClick: () => setShowDraft(current => !current) }, showDraft ? t('mergedTitle') + ' ▴' : t('mergedTitle') + ' ▾'),
+                  h('button', { className: 'sd-btn', type: 'button', disabled: !analysis.merged?.markdown, onClick: () => setShowDraft(current => !current) }, showDraft ? t('mergedTitle') + ' ▴' : t('mergedTitle') + ' ▾'),
                   h('button', {
-                    className: 'sd-btn primary', type: 'button', disabled: building || (analysis.audit && analysis.audit.poison),
+                    className: 'sd-btn primary', type: 'button', disabled: previewOnly || !analysis.merged || !sessionId || building || (analysis.audit && analysis.audit.poison),
                     onClick: build,
                   }, building ? t('generating') : t('generateMerged')),
                 ),
                 analysis.audit && analysis.audit.poison
                   ? h('div', { style: { color: '#ff9a9a', fontSize: 12, marginTop: 8 } }, t('auditFailed'))
                   : null,
-                showDraft ? h('pre', { className: 'sd-pre', style: { marginTop: 10 } }, analysis.merged.markdown) : null,
+                showDraft && analysis.merged?.markdown ? h('pre', { className: 'sd-pre', style: { marginTop: 10 } }, analysis.merged.markdown) : null,
               ),
             ) : null,
             batch !== null ? h('div', { className: 'sd-panel' },
@@ -1539,7 +1643,7 @@ window.__ModuleLoader__.load({
     }
 
     function MarketView(props) {
-      const { t, workspace, onBack, onInstalled, pushToast } = props
+      const { t, workspace, sessionId = '', onBack, onInstalled, pushToast } = props
       const [skills, setSkills] = useState([])
       const [error, setError] = useState('')
       const [busy, setBusy] = useState({})
@@ -1554,33 +1658,35 @@ window.__ModuleLoader__.load({
       const [conflict, setConflict] = useState(null)
 
       const load = useCallback(() => {
-        api(`/market?workspace=${encodeURIComponent(workspace ?? '')}`)
+        api(`/market?workspace=${encodeURIComponent(workspace ?? '')}&sessionId=${encodeURIComponent(sessionId)}`)
           .then(payload => {
             setSkills(payload.skills)
             setError('')
           })
           .catch(err => setError(err.message))
-      }, [workspace])
+      }, [workspace, sessionId])
 
       useEffect(() => {
         load()
       }, [load])
 
-      const install = async (skill, conflictMode) => {
+      const install = async (skill, conflictMode, conflictInfo) => {
+        if (!sessionId) { pushToast(t('reviewSessionHint')); return }
         if (busy[skill.name]) return
         setBusy(current => ({ ...current, [skill.name]: true }))
-        setPhase(current => ({ ...current, [skill.name]: 'auditing' }))
-        const timer = setTimeout(() => setPhase(current => ({ ...current, [skill.name]: 'installing' })), 700)
+        setPhase(current => ({ ...current, [skill.name]: 'installing' }))
         try {
           const result = await api('/install', {
+            allowFailure: true,
             body: {
               name: skill.name,
               origin: 'market',
               workspace,
+              sessionId,
+              ...(conflictInfo ? skillSelector(conflictInfo) : {}),
               ...(conflictMode ? { conflict: conflictMode } : {}),
             },
           })
-          clearTimeout(timer)
           if (!result.ok && result.code === 'name-conflict') {
             setPhase(current => ({ ...current, [skill.name]: '' }))
             setConflict({ kind: 'market', skill, info: result.conflict })
@@ -1606,7 +1712,6 @@ window.__ModuleLoader__.load({
             pushToast(`${skill.name} · ${message}`)
           }
         } catch (err) {
-          clearTimeout(timer)
           setPhase(current => ({ ...current, [skill.name]: '' }))
           setFailures(current => ({ ...current, [skill.name]: err.message }))
           pushToast(err.message)
@@ -1623,8 +1728,8 @@ window.__ModuleLoader__.load({
           pushToast(t('conflictCancelled'))
           return
         }
-        if (current.kind === 'remote') await installRemoteSkill(current.skill, mode)
-        else await install(current.skill, mode)
+        if (current.kind === 'remote') await installRemoteSkill(current.skill, mode, current.info)
+        else await install(current.skill, mode, current.info)
       }
 
       const filtered = useMemo(() => {
@@ -1660,14 +1765,18 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const installRemoteSkill = async (item, conflictMode) => {
+      const installRemoteSkill = async (item, conflictMode, conflictInfo) => {
+        if (!sessionId) { pushToast(t('reviewSessionHint')); return }
         if (remoteBusy[item.id] === true) return
         setRemoteBusy(current => ({ ...current, [item.id]: true }))
         try {
           const result = await api('/remote/install', {
+            allowFailure: true,
             body: {
               id: item.id,
               workspace,
+              sessionId,
+              ...(conflictInfo ? skillSelector(conflictInfo) : {}),
               ...(conflictMode ? { conflict: conflictMode } : {}),
             },
           })
@@ -1743,7 +1852,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'sd-actions' },
               h('button', {
                 className: 'sd-btn primary', type: 'button',
-                disabled: remoteBusy[item.id] === true,
+                disabled: !sessionId || remoteBusy[item.id] === true,
                 onClick: () => installRemoteSkill(item),
               }, remoteBusy[item.id] === true ? t('installing') : t('install')),
             ),
@@ -1768,7 +1877,7 @@ window.__ModuleLoader__.load({
                 installed
                   ? h('span', { style: { color: '#35e0d2', marginLeft: 'auto', fontSize: 12 } }, `✓ ${t('installed')}`)
                   : h('button', {
-                    className: 'sd-btn primary', type: 'button', disabled: busy[skill.name],
+                    className: 'sd-btn primary', type: 'button', disabled: !sessionId || busy[skill.name],
                     onClick: () => install(skill),
                   }, state === 'auditing' ? t('auditing') : state === 'installing' ? t('installing') : t('install')),
               ),
@@ -1791,6 +1900,8 @@ window.__ModuleLoader__.load({
 
     function ManagerPanel(props) {
       const { t, layout } = props
+      const explicitSessionId = typeof props.sessionId === 'string' ? props.sessionId : ''
+      const [currentSessionId, setCurrentSessionId] = useState(explicitSessionId)
       const [data, setData] = useState(null)
       const [error, setError] = useState('')
       const [query, setQuery] = useState('')
@@ -1806,10 +1917,13 @@ window.__ModuleLoader__.load({
       const [scanning, setScanning] = useState(false)
       const [openBundles, setOpenBundles] = useState({})
       const [toasts, pushToast] = useToasts()
+      const loadRequest = useRef(0)
 
       const load = useCallback(() => {
-        api('/state')
+        const requestId = ++loadRequest.current
+        api(currentSessionId ? `/state?sessionId=${encodeURIComponent(currentSessionId)}` : '/state')
           .then(payload => {
+            if (requestId !== loadRequest.current) return
             setData(payload)
             setError('')
             try {
@@ -1818,14 +1932,31 @@ window.__ModuleLoader__.load({
               /* ignore */
             }
           })
-          .catch(err => setError(err.message))
-      }, [])
+          .catch(err => { if (requestId === loadRequest.current) setError(err.message) })
+      }, [currentSessionId])
 
       useEffect(() => {
         load()
+        return () => { loadRequest.current += 1 }
       }, [load])
 
+      useEffect(() => {
+        if (explicitSessionId) setCurrentSessionId(explicitSessionId)
+      }, [explicitSessionId])
+
       const workspace = data?.workspace ?? ''
+      const sessionId = data?.sessionAvailable === true && data?.sessionId === currentSessionId ? currentSessionId : ''
+      const sessionPicker = h('div', { className: 'sd-srow', style: { padding: '8px 18px', flexWrap: 'wrap' } },
+        h('label', { htmlFor: 'sd-review-session' }, t('reviewSession')),
+        h('select', {
+          id: 'sd-review-session', className: 'sd-select', value: currentSessionId,
+          'aria-label': t('reviewSession'), onChange: event => setCurrentSessionId(event.target.value),
+        },
+          h('option', { value: '' }, t('chooseSession')),
+          (data?.sessions ?? []).map(session => h('option', { key: session.id, value: session.id }, session.title || t('chooseSession'))),
+        ),
+        !sessionId ? h('span', { className: 'sd-hint' }, t('reviewSessionHint')) : null,
+      )
 
       const installed = useMemo(() => data?.installed ?? [], [data])
       const counts = useMemo(() => {
@@ -1878,11 +2009,8 @@ window.__ModuleLoader__.load({
         if (scanning) return
         setScanning(true)
         setOverlayStatus({ kind: 'loading', text: t('scanning') })
-        const started = Date.now()
         try {
           const result = await api('/scan', { body: {} })
-          const rest = 400 - (Date.now() - started)
-          if (rest > 0) await new Promise(resolve => setTimeout(resolve, rest))
           setOverlayStatus({ kind: 'ok', text: t('scanDone', { n: result.total ?? 0, m: result.added ?? 0 }) })
           load()
         } catch (err) {
@@ -1895,7 +2023,7 @@ window.__ModuleLoader__.load({
 
       const openFolder = async skill => {
         try {
-          await api('/open', { body: { name: skill.name, workspace } })
+          await api('/open', { body: { ...skillSelector(skill), workspace, sessionId } })
           pushToast(t('openFolder'))
         } catch (err) {
           pushToast(err.message)
@@ -1906,7 +2034,7 @@ window.__ModuleLoader__.load({
         if (busy) return
         setBusy(true)
         try {
-          await api('/toggle', { body: { name: skill.name, enabled: !skill.enabled, workspace } })
+          await api('/toggle', { body: { ...skillSelector(skill), enabled: !skill.enabled, workspace, sessionId } })
           pushToast(skill.enabled ? t('toastDisabled', { name: skill.name }) : t('toastEnabled', { name: skill.name }))
           load()
         } catch (err) {
@@ -1917,10 +2045,10 @@ window.__ModuleLoader__.load({
       }
 
       const askDelete = (skill, action) => {
-        if (action === 'ask') setDeleting(skill.name)
+        if (action === 'ask') setDeleting(skillKey(skill))
         else if (action === 'cancel') setDeleting(null)
         else {
-          api('/delete', { body: { name: skill.name, workspace } })
+          api('/delete', { body: { ...skillSelector(skill), workspace, sessionId } })
             .then(() => {
               setDeleting(null)
               pushToast(t('deleted', { name: skill.name }))
@@ -1932,22 +2060,13 @@ window.__ModuleLoader__.load({
 
       const replaceSkill = async skill => {
         if (replacing !== '') return
-        setReplacing(skill.name)
+        setReplacing(skillKey(skill))
         setOverlayStatus({ kind: 'loading', text: t('replaceSearching') })
-        const started = Date.now()
-        // Always keep the spinner visible for at least 300ms so the result never
-        // flashes in before the user reads the loading state.
-        const settle = async () => {
-          const rest = 300 - (Date.now() - started)
-          if (rest > 0) await new Promise(resolve => setTimeout(resolve, rest))
-        }
         try {
-          const result = await api('/replace', { body: { name: skill.name, workspace } })
-          await settle()
+          const result = await api('/replace', { body: { ...skillSelector(skill), workspace, sessionId } })
           setOverlayStatus({ kind: 'ok', text: t('replaceInstalled', { name: result.name }) })
           load()
         } catch (err) {
-          await settle()
           setOverlayStatus({ kind: 'none', text: err.message || t('replaceNone') })
         } finally {
           setReplacing('')
@@ -1955,9 +2074,9 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const removeRecord = async name => {
+      const removeRecord = async skill => {
         try {
-          await api('/delete-record', { body: { name } })
+          await api('/delete-record', { body: skillSelector(skill) })
           pushToast(t('recordRemoved'))
           load()
         } catch (err) {
@@ -1966,12 +2085,12 @@ window.__ModuleLoader__.load({
       }
 
       const renderRow = skill => h(Row, {
-        key: skill.name,
+        key: skillKey(skill),
         skill,
         t,
         busy,
         replacing,
-        deleting: deleting === skill.name,
+        deleting: deleting === skillKey(skill),
         onDetail: setDetail,
         onOpen: openFolder,
         onToggle: toggle,
@@ -1996,9 +2115,11 @@ window.__ModuleLoader__.load({
       if (view === 'market') {
         return h('div', { className: 'sd-page' },
           h('style', { key: 'sd-css' }, CSS),
+          sessionPicker,
           h(MarketView, {
             t,
             workspace,
+            sessionId,
             pushToast,
             onBack: () => setView('list'),
             onInstalled: load,
@@ -2010,9 +2131,11 @@ window.__ModuleLoader__.load({
       if (view === 'learn') {
         return h('div', { className: 'sd-page' },
           h('style', { key: 'sd-css' }, CSS),
+          sessionPicker,
           h(LearnView, {
             t,
             workspace,
+            sessionId,
             installed,
             pushToast,
             onBack: () => setView('list'),
@@ -2024,6 +2147,7 @@ window.__ModuleLoader__.load({
 
       return h('div', { className: 'sd-page' },
         h('style', { key: 'sd-css' }, CSS),
+        sessionPicker,
         h('div', { className: 'sd-page-inner' },
           h('div', { className: 'sd-topbar' },
             h('span', { className: 'sd-title' }, t('panelTitle')),
@@ -2103,7 +2227,7 @@ window.__ModuleLoader__.load({
                 }, iconPlus(15)),
                 h('button', {
                   className: 'sd-iconbtn danger sd-remove-record', type: 'button', title: t('removeRecord'),
-                  onClick: () => removeRecord(item.name),
+                  onClick: () => removeRecord(item),
                 }, iconTrash(15)),
               ),
             )),
@@ -2154,8 +2278,9 @@ window.__ModuleLoader__.load({
             ),
         ),
         detail ? h(DetailModal, {
-          name: detail.name,
+          skill: detail,
           workspace,
+          sessionId,
           t,
           onClose: () => setDetail(null),
           onOpen: openFolder,
@@ -2164,6 +2289,7 @@ window.__ModuleLoader__.load({
         }) : null,
         settingsOpen && data ? h(SettingsModal, {
           data,
+          sessionId,
           t,
           onClose: () => setSettingsOpen(false),
           onSaved: () => {
@@ -2174,6 +2300,7 @@ window.__ModuleLoader__.load({
         updatesOpen ? h(UpdatesModal, {
           t,
           workspace,
+          sessionId,
           pushToast,
           onClose: () => setUpdatesOpen(false),
           onInstalled: load,
@@ -2234,6 +2361,13 @@ window.__ModuleLoader__.load({
           inject: () => ({ t }),
         }, DetectiveDock))
 
+        const offWarnings = ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'skill-detective-warnings',
+          order: 41,
+          inject: () => ({ t }),
+        }, ApiWarnings))
+
         const offRow = ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
           name: 'sidebar.panellist',
           id: PANEL_ID,
@@ -2251,11 +2385,16 @@ window.__ModuleLoader__.load({
           offPanel()
           offRow()
           offDock()
+          offWarnings()
           offToggle()
         }
       }, 'skill-detective: seats')
     }
 
-    return { inject, apply }
+    return {
+      inject,
+      apply,
+      __test: { api, skillSelector, skillKey, sameWorkspaces, scopeChanges, installFailure, SettingsModal, DetectiveDock, ManagerPanel, DetailModal, MarketView, LearnView, ApiWarnings, zh, en },
+    }
   },
 })
