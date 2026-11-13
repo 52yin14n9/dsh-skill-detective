@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-detective",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": false,
   "type": "module",
   "description": "Auto skill butler for DeepSeek Harness: model-assisted need detection, full-directory security review, a cached skill index, and installed-skill management in a Web panel.",
