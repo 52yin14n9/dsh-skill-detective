@@ -2119,6 +2119,13 @@ class SkillDetective {
     this.lastNeedAt = new Map() // `${sessionId}:${need}` -> timestamp
     this.lastSearch = null
     this.tempRegistrations = new Map()
+    this.disposed = false
+    ctx.effect?.(() => async () => {
+      this.disposed = true
+      await this.mutateSkills(async () => {
+        for (const id of [...this.tempRegistrations.keys()]) await this.releaseTemp(id)
+      })
+    }, 'skill-detective: temporary registration cleanup')
     this.mutationQueue = Promise.resolve()
     this.mutationContext = new AsyncLocalStorage()
     this.scanPromise = null
@@ -2714,8 +2721,8 @@ class SkillDetective {
   }
 
   /** Curated market list with installed markers. */
-  async market(workspace) {
-    const installed = await this.listInstalled(workspace)
+  async market(workspace, options = {}) {
+    const installed = await this.listInstalled(workspace, options)
     const installedNames = new Set(installed.map(item => item.name))
     return CATALOG.map(entry => ({
       name: entry.name,
@@ -2738,8 +2745,8 @@ class SkillDetective {
    * Compare each installed skill with the curated marketplace catalog:
    * newer version of the same skill, or a same-category skill with more installs.
    */
-  async updates(workspace) {
-    const installed = await this.listInstalled(workspace)
+  async updates(workspace, options = {}) {
+    const installed = await this.listInstalled(workspace, options)
     const installedNames = new Set(installed.map(item => item.name))
     const catalog = CATALOG
     return installed.filter(skill => skill.managed !== false).map(skill => {
@@ -3362,7 +3369,7 @@ class SkillDetective {
         } })
       } catch (error) {
         if (registered) await this.cleanupCommitted(() => this.releaseTemp(record.instanceId), '失败安装的注册释放', warnings)
-        if (oldRegistration) this.tempRegistrations.set(record.instanceId, oldRegistration)
+        if (registered && oldRegistration) await this.cleanupCommitted(() => this.restoreTempRegistration(oldRegistration), '旧临时注册恢复', warnings)
         this.state.data.installs = oldState; this.index.data.skills = oldIndex
         try { await this.state.save(); await this.index.save() } catch (rollbackError) { this.log(`skill-detective: rollback state persistence failed: ${rollbackError.message}`) }
         return { ok: false, code: error.code || 'write-failed', error: error.code || 'write-failed', message: error.message }
@@ -3474,29 +3481,71 @@ class SkillDetective {
    * warning when the skills service or the agent scope is unavailable; the panel
    * then reports the real state instead of pretending the skill is loaded.
    */
+  createTempRegistration(sessionId, skill) {
+    const scopeCtx = this.ctx.get('agents').get(sessionId).ctx
+    const { instanceId, ...input } = skill
+    const directory = join(DSH_HOME, 'skill-detective', 'temp', sessionDirectoryId(sessionId), skill.name)
+    const payload = { source: 'runtime', path: join(directory, 'SKILL.md'), resourceBase: { kind: 'directory', path: directory }, ...input }
+    let dispose, scopeDispose, invoked = false, disposed = false, record
+    const once = async () => {
+      if (disposed) return
+      await dispose?.()
+      disposed = true
+      if (this.tempRegistrations.get(instanceId) === record) this.tempRegistrations.delete(instanceId)
+    }
+    scopeDispose = scopeCtx.effect(() => {
+      invoked = true
+      const registered = scopeCtx.skills.register(payload)
+      if (typeof registered === 'function') dispose = registered
+      else if (typeof registered?.dispose === 'function') dispose = () => registered.dispose()
+      else throw new Error('临时技能注册未返回释放句柄')
+      return once
+    }, 'skill-detective: temp skill')
+    if (!invoked || disposed) throw new Error('临时技能作用域不可用')
+    record = { sessionId, skill: { ...skill }, dispose: async () => { await scopeDispose?.(); await once() } }
+    if (instanceId) this.tempRegistrations.set(instanceId, record)
+    return record
+  }
+
+  async restoreTempRegistration(previous) {
+    if (!previous || this.disposed || !this.validSessionId(previous.sessionId)) return
+    const id = previous.skill.instanceId
+    if (this.tempRegistrations.get(id) === previous) return
+    await this.releaseTemp(id)
+    this.createTempRegistration(previous.sessionId, previous.skill)
+  }
+
   async registerTempFor(sessionId, skill) {
-    if (!this.validSessionId(sessionId)) return false
-    let dispose, invoked = false, disposed = false
-    const once = async () => { if (!disposed) { await dispose?.(); disposed = true } }
+    if (this.disposed || !this.validSessionId(sessionId)) return false
+    const previous = this.tempRegistrations.get(skill.instanceId)
     try {
-      const scopeCtx = this.ctx.get('agents').get(sessionId).ctx
-      if (typeof scopeCtx.effect !== 'function' || typeof scopeCtx.skills?.register !== 'function') return false
-      const { instanceId, ...payload } = skill
-      scopeCtx.effect(() => {
-        invoked = true
-        const registered = scopeCtx.skills.register(payload)
-        if (typeof registered === 'function') dispose = registered
-        else if (typeof registered?.dispose === 'function') dispose = () => registered.dispose()
-        return once
-      }, 'skill-detective: temp skill')
-      if (!invoked) return false
-      if (instanceId) this.tempRegistrations.set(instanceId, { sessionId, dispose: once })
+      // The registry is first-wins: the previous entry must leave before replacement.
+      if (previous) await this.releaseTemp(skill.instanceId)
+      this.createTempRegistration(sessionId, skill)
       return true
     } catch (error) {
-      try { await dispose?.() } catch { /* original registration error wins */ }
-      this.log(`skill-detective: temp registration failed: ${error.message}`)
+      try { await this.restoreTempRegistration(previous) }
+      catch (restoreError) { this.log('skill-detective: temp registration restore failed: ' + restoreError.message) }
+      this.log('skill-detective: temp registration failed: ' + error.message)
       return false
     }
+  }
+
+  async restoreTempFor(sessionId) {
+    return this.mutateSkills(async () => {
+      if (this.disposed || !this.validSessionId(sessionId)) return
+      const root = await this.targetRoot('temp', '', sessionId)
+      const records = await scanRoot({ root, scope: 'global' })
+      for (const skill of records) {
+        if (skill.disabled) continue
+        const record = instanceRecord({ ...skill, scope: 'temp', sessionId })
+        if (this.tempRegistrations.has(record.instanceId)) continue
+        const markdown = await readFile(record.file, 'utf8')
+        if (!await this.registerTempFor(sessionId, { name: record.name, description: record.description, content: bodyOf(markdown), whenToUse: record.whenToUse, instanceId: record.instanceId })) {
+          this.log('skill-detective: could not restore temporary skill ' + record.name + ' for ' + sessionId)
+        }
+      }
+    })
   }
 
   async moveSkill(selector, targetScope, workspaces, workspace, sessionId) {
@@ -3598,7 +3647,7 @@ class SkillDetective {
         } })
       } catch (error) {
         if (registered) await this.cleanupCommitted(() => this.releaseTemp(target.instanceId), '失败启用的注册释放', warnings)
-        if (oldRegistration) this.tempRegistrations.set(target.instanceId, oldRegistration)
+        if (registered && oldRegistration) await this.cleanupCommitted(() => this.restoreTempRegistration(oldRegistration), '旧临时注册恢复', warnings)
         throw error
       }
       if (target.scope === 'temp') {
@@ -3808,6 +3857,7 @@ class SkillDetective {
     }
 
     this.pending.set(sessionId, {
+      id: randomUUID(),
       kind: 'recommend',
       label: analysis.label,
       matched: analysis.matched,
@@ -3857,21 +3907,21 @@ class SkillDetective {
    * a need is suppressed it never asks again until the user restores it from the
    * settings panel.
    */
-  async dismiss(sessionId) {
-    if (sessionId) {
-      const pending = this.pending.get(sessionId)
-      if (pending !== undefined && typeof pending.need === 'string') {
-        const need = String(pending.suppressionKey || pending.need)
-        await this.state.update(data => {
-          data.suppressed[need] = {
-            at: Date.now(),
-            label: String(pending.label ?? need),
-            skill: String(pending.candidates?.[0]?.name ?? ''),
-          }
-        })
-      }
-      this.pending.delete(sessionId)
+  async dismiss(sessionId, recommendationId, { suppress = false } = {}) {
+    const pending = this.pending.get(sessionId)
+    if (!recommendationId || pending?.id !== recommendationId) return { ok: true, suppressed: this.suppressedList() }
+    if (suppress && typeof pending.need === 'string') {
+      const need = String(pending.suppressionKey || pending.need)
+      await this.state.update(data => {
+        data.suppressed[need] = {
+          at: Date.now(),
+          label: String(pending.label ?? need),
+          skill: String(pending.candidates?.[0]?.name ?? ''),
+        }
+      })
     }
+    // A new user message may replace this pending entry during persistence.
+    if (this.pending.get(sessionId)?.id === recommendationId) this.pending.delete(sessionId)
     return { ok: true, suppressed: this.suppressedList() }
   }
 
@@ -4003,6 +4053,22 @@ function openInFileManager(path) {
 
 export function apply(ctx) {
   const service = new SkillDetective(ctx)
+
+  ctx.effect(() => ctx.on('agent/created', async ({ agent }) => {
+    try { await service.restoreTempFor(agent.id) }
+    catch (error) { service.log('skill-detective: temp restore failed: ' + error.message) }
+  }), 'skill-detective: restore temporary skills on agent creation')
+  ctx.effect(() => {
+    let cancelled = false
+    Promise.resolve().then(async () => {
+      const agents = ctx.get('agents')?.list?.() ?? []
+      for (const agent of agents) {
+        if (cancelled) break
+        await service.restoreTempFor(agent.id)
+      }
+    }).catch(error => service.log('skill-detective: live temp restore failed: ' + error.message))
+    return () => { cancelled = true }
+  }, 'skill-detective: restore temporary skills for live agents')
 
   // Automatic discovery: scan the workspaces, `$DSH_HOME/skills` and the skill
   // registry as soon as the plugin loads, so an installed plugin never shows an
@@ -4159,12 +4225,12 @@ export function apply(ctx) {
 
           if (method === 'GET' && route === '/market') {
             const workspace = service.normalizeWorkspace(url.searchParams.get('workspace') ?? '')
-            return sendJson(res, 200, { ok: true, skills: await service.market(workspace) })
+            return sendJson(res, 200, { ok: true, skills: await service.market(workspace, { sessionId: url.searchParams.get('sessionId') ?? '' }) })
           }
 
           if (method === 'GET' && route === '/updates') {
             const workspace = service.normalizeWorkspace(url.searchParams.get('workspace') ?? '')
-            return sendJson(res, 200, { ok: true, updates: await service.updates(workspace) })
+            return sendJson(res, 200, { ok: true, updates: await service.updates(workspace, { sessionId: url.searchParams.get('sessionId') ?? '' }) })
           }
 
           if (method === 'GET' && route === '/detail') {
@@ -4189,7 +4255,7 @@ export function apply(ctx) {
           }
 
           if (route === '/dismiss') {
-            return sendJson(res, 200, await service.dismiss(String(body.sessionId ?? '')))
+            return sendJson(res, 200, await service.dismiss(String(body.sessionId ?? ''), String(body.recommendationId ?? ''), { suppress: body.suppress === true }))
           }
 
           if (route === '/restore-suppressed') {

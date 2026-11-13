@@ -802,7 +802,7 @@ window.__ModuleLoader__.load({
         if (!changed) continue
         if (row.scope === 'temp' && !sessionId) throw new Error(t('tempSessionRequired'))
         if (row.scope === 'workspace' && (row.workspaces ?? []).length === 0) throw new Error(t('workspaceRequired'))
-        changes.push({ ...skillSelector(skill), scope: row.scope, workspaces: row.workspaces, workspace, sessionId: row.scope === 'temp' ? sessionId : undefined })
+        changes.push({ ...skillSelector(skill), scope: row.scope, workspaces: row.workspaces, workspace, sessionId: sessionId || undefined })
       }
       return changes
     }
@@ -916,7 +916,6 @@ window.__ModuleLoader__.load({
       const [steps, setSteps] = useState([])
       const [fade, setFade] = useState(false)
       const timerRef = useRef(null)
-      const doneRef = useRef(false)
       const sessionRef = useRef('')
       const viewRef = useRef(null)
       viewRef.current = view
@@ -943,18 +942,18 @@ window.__ModuleLoader__.load({
           try {
             const payload = await api('/pending/latest')
             if (!alive || !payload.pending) return
-            if (doneRef.current) return
             if (viewRef.current !== null) return
             const pending = payload.pending
+            setFade(false)
             sessionRef.current = payload.sessionId ?? ''
             if (pending.kind === 'covered') {
-              setView({ kind: 'covered', name: pending.name })
-              if (sessionRef.current) api('/dismiss', { body: { sessionId: sessionRef.current } }).catch(() => {})
+              setView({ kind: 'covered', name: pending.name, recommendationId: pending.id })
+              if (sessionRef.current) api('/dismiss', { body: { sessionId: sessionRef.current, recommendationId: pending.id, suppress: false } }).catch(() => {})
               schedule(() => setView(null), 3200)
               return
             }
             if (pending.kind === 'recommend') {
-              setView({ kind: 'recommend', label: pending.label, need: pending.need, candidates: pending.candidates, searchText: pending.searchText })
+              setView({ kind: 'recommend', recommendationId: pending.id, label: pending.label, need: pending.need, candidates: pending.candidates, searchText: pending.searchText })
             }
           } catch {
             /* the host may still be booting */
@@ -972,15 +971,18 @@ window.__ModuleLoader__.load({
       const dismiss = async () => {
         setView(null)
         clearTimers()
-        if (sessionRef.current) await api('/dismiss', { body: { sessionId: sessionRef.current } }).catch(() => {})
+        if (sessionRef.current) await api('/dismiss', { body: { sessionId: sessionRef.current, recommendationId: view?.recommendationId, suppress: true } }).catch(() => {})
       }
 
       const start = async (needArg, labelArg, conflictMode) => {
         const need = needArg ?? view?.need
         const label = labelArg ?? view?.label
         const searchText = view?.searchText ?? ''
+        const recommendationId = view?.recommendationId
+        const sessionId = sessionRef.current
+        const retryConflict = conflictMode ?? view?.conflictMode
+        const conflictInfo = view?.conflict ?? view?.conflictInfo
         if (need === undefined || label === undefined) return
-        doneRef.current = false
         setFade(false)
         setSteps([{ id: 'install', label: t('processingInstall'), detail: t('processingHint'), status: 'run' }])
         setView({ kind: 'progress' })
@@ -988,11 +990,15 @@ window.__ModuleLoader__.load({
         try {
           const result = await api('/install', {
             allowFailure: true,
-            body: { need, sessionId: sessionRef.current, text: searchText, ...(conflictMode ? { conflict: conflictMode } : {}) },
+            body: {
+              need, sessionId, text: searchText,
+              ...(retryConflict ? { conflict: retryConflict } : {}),
+              ...(retryConflict && conflictInfo ? { ...skillSelector(conflictInfo), scope: conflictInfo.scope } : {}),
+            },
           })
           clearTimers()
           if (!result.ok && result.code === 'name-conflict') {
-            setView({ kind: 'conflict', need, label, searchText, conflict: result.conflict })
+            setView({ kind: 'conflict', need, label, searchText, recommendationId, conflict: result.conflict })
             return
           }
           const real = Array.isArray(result.steps) ? result.steps : []
@@ -1006,21 +1012,20 @@ window.__ModuleLoader__.load({
             setSteps(mapped)
           }
           if (result.ok) {
-            doneRef.current = true
             setView({ kind: 'done', name: result.displayName || result.name })
-            if (sessionRef.current) api('/dismiss', { body: { sessionId: sessionRef.current } }).catch(() => {})
+            if (sessionId) api('/dismiss', { body: { sessionId, recommendationId, suppress: false } }).catch(() => {})
             schedule(() => {
               setFade(true)
               schedule(() => setView(null), 420)
             }, 4200)
           } else {
-            setView({ ...installFailure(result, t), need, label, searchText })
+            setView({ ...installFailure(result, t), need, label, searchText, recommendationId, conflictMode: retryConflict, conflictInfo })
           }
         } catch (error) {
           clearTimers()
           const failure = error.payload ? installFailure(error.payload, t) : { kind: 'failed', message: error.name === 'TypeError' ? t('networkFailed') : error.message || t('networkFailed') }
           setSteps([{ id: 'install', label: t('installFailed'), status: 'fail', detail: failure.message }])
-          setView({ ...failure, need, label, searchText })
+          setView({ ...failure, need, label, searchText, recommendationId, conflictMode: retryConflict, conflictInfo })
         }
       }
 
@@ -1268,6 +1273,17 @@ window.__ModuleLoader__.load({
       })
       const [saving, setSaving] = useState(false)
       const [error, setError] = useState('')
+      const appliedScopes = useRef(new Set())
+
+      useEffect(() => {
+        // A failed batch can still contain committed moves with new identities.
+        // Rebase those rows from refreshed state, retaining unsaved rows.
+        setRows(current => Object.fromEntries(data.installed.filter(skill => skill.managed !== false).map(skill => {
+          const key = skillKey(skill)
+          return [key, current[key] ?? { scope: skill.scope === 'global' ? 'global' : skill.scope === 'temp' ? 'temp' : 'workspace', workspaces: workspacePaths(skill, data.workspace) }]
+        })))
+        appliedScopes.current.clear()
+      }, [data.installed, data.workspace])
 
       useEffect(() => {
         const onKey = event => {
@@ -1292,13 +1308,17 @@ window.__ModuleLoader__.load({
         setSaving(true)
         setError('')
         try {
-          const changes = scopeChanges(data.installed, rows, data.workspace, sessionId, t)
+          const changes = scopeChanges(data.installed.filter(skill => !appliedScopes.current.has(skillKey(skill))), rows, data.workspace, sessionId, t)
           await api('/settings', { body: { defaultScope } })
-          for (const body of changes) await api('/scope', { body })
+          for (const body of changes) {
+            await api('/scope', { body })
+            appliedScopes.current.add(skillKey(body))
+          }
           onSaved()
           onClose()
         } catch (err) {
           setError(err.message)
+          onSaved?.()
         } finally {
           setSaving(false)
         }

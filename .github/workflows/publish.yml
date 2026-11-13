@@ -24,6 +24,12 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      - name: Verify tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const p = JSON.parse(fs.readFileSync("package.json", "utf8")); const expected = `v${p.version}`; if (process.env.RELEASE_TAG !== expected) { console.error(`Release tag ${process.env.RELEASE_TAG} does not match ${expected}`); process.exit(1); }'
+
       - name: Run regression tests
         run: npm test
 

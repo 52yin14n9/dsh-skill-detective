@@ -33,14 +33,21 @@ async function fixture(t) {
   const active = new Map(), registrations = [], requests = [], agents = new Map()
   let rejectRegistration = false
   let rejectDisposal = false
+  const pluginEffects = new Map(), agentEffects = new Map()
   function addSession(id) {
     const skills = new Map()
     active.set(id, skills)
-    agents.set(id, { ctx: {
-      effect(fn) { return fn() },
+    const effects = []
+    agentEffects.set(id, effects)
+    agents.set(id, { id, ctx: {
+      effect(fn) { const dispose = fn(); effects.push(dispose); return dispose },
       skills: { register(skill) {
-        if (rejectRegistration) throw new Error('TEST_REGISTRATION_REJECTED')
-        const token = Symbol(skill.name)
+        if (rejectRegistration) {
+          if (typeof rejectRegistration === 'number') rejectRegistration -= 1
+          throw new Error('TEST_REGISTRATION_REJECTED')
+        }
+        if (skills.has(skill.name)) return () => {} // Live registry: duplicate runtime names are first-wins.
+        const token = skill.name
         skills.set(token, skill)
         registrations.push({ kind: 'register', sessionId: id, name: skill.name })
         return () => { if (rejectDisposal) throw new Error('TEST_DISPOSAL_FAILED'); skills.delete(token); registrations.push({ kind: 'dispose', sessionId: id, name: skill.name }) }
@@ -51,10 +58,12 @@ async function fixture(t) {
   const services = {
     workingDirectory: { defaultDirectory: A },
     workspaceRegistry: { list: () => [{ path: A, title: 'A' }, { path: B, title: 'B' }] },
-    skills: { list: async () => [] }, agents: { get: id => agents.get(id) },
+    skills: { list: async () => [] }, agents: { get: id => agents.get(id), list: () => [...agents.values()] },
   }
   function service() {
-    const value = new __test.SkillDetective({ get: key => services[key], emit() {}, logger: { info() {} } })
+    const effects = []
+    const value = new __test.SkillDetective({ get: key => services[key], emit() {}, effect(fn) { const dispose = fn(); effects.push(dispose); return dispose }, logger: { info() {} } })
+    pluginEffects.set(value, effects)
     value.judge = { json: async request => {
       requests.push(request)
       return { ok: true, model: 'deterministic-local-stub', data: request.maxTokens === 400
@@ -64,6 +73,8 @@ async function fixture(t) {
     return value
   }
   const detective = service()
+  const disposePlugin = async (value = detective) => { for (const dispose of pluginEffects.get(value) || []) await dispose?.() }
+  const disposeAgent = async id => { for (const dispose of agentEffects.get(id) || []) await dispose?.(); agents.delete(id) }
   async function put(root, name, marker) {
     const path = join(root, name)
     await mkdir(path, { recursive: true })
@@ -72,7 +83,7 @@ async function fixture(t) {
   }
   const scan = () => detective.scanAll({ reason: 'scope-regression' })
   const selector = skill => ({ instanceId: skill.instanceId, path: skill.path, name: skill.name, workspace: skill.workspace || A, sessionId: skill.sessionId || '' })
-  return { ...__test, dir, home, A, B, detective, service, put, scan, selector, services, active, registrations, requests, addSession, rejectRegistration: value => { rejectRegistration = value }, rejectDisposal: value => { rejectDisposal = value } }
+  return { ...__test, dir, home, A, B, detective, service, put, scan, selector, services, active, registrations, requests, addSession, disposePlugin, disposeAgent, rejectRegistration: value => { rejectRegistration = value }, rejectDisposal: value => { rejectDisposal = value } }
 }
 
 test('a slow scan cannot overwrite an installation committed behind its snapshot', { timeout: 5_000 }, async t => {
@@ -285,7 +296,7 @@ test('registration failure rolls back a temporary overwrite and preserves the ol
   const file = join(installed.path, 'SKILL.md')
   await writeFile(file, markdown('word-docx', 'ORIGINAL_BYTES'))
   const before = await readFile(file, 'utf8')
-  f.rejectRegistration(true)
+  f.rejectRegistration(1)
   const result = await f.detective.install({ name: 'word-docx', scope: 'temp', workspace: f.A, sessionId: 'session-1', conflict: 'overwrite', instanceId: installed.instanceId, path: installed.path })
   assert.equal(result.ok, false); assert.equal(result.code, 'temp-registration-failed')
   assert.equal(await readFile(file, 'utf8'), before)
@@ -469,4 +480,66 @@ test('learning preserves installed peer assets; pure Markdown document integrati
   assert.equal(existsSync(join(plain.A, '.dsh', 'skills', 'word-docx-pro', 'SKILL.md')), true)
   assert.match(await readFile(join(plainSource, 'SKILL.md'), 'utf8'), /PLAIN_WORD_DOC/)
   assert.match(await readFile(join(plainPeer, 'SKILL.md'), 'utf8'), /PLAIN_MARKDOWN_DOC/)
+})
+
+
+test('temporary overwrite and repeated enable replace a first-wins registration', async t => {
+  const f = await fixture(t)
+  const installed = await f.detective.install({ name: 'word-docx', scope: 'temp', workspace: f.A, sessionId: 'session-1' })
+  const selector = { ...installed, workspace: f.A, sessionId: 'session-1' }
+  const result = await f.detective.installPrepared({ name: 'word-docx', files: [{ path: 'SKILL.md', text: markdown('word-docx', 'REPLACEMENT_CONTENT') }], scope: 'temp', workspace: f.A, sessionId: 'session-1', conflict: 'overwrite', selector, verdict: { verdict: 'safe', severity: 'low', summary: 'replacement' } })
+  assert.equal(result.ok, true)
+  assert.equal(f.active.get('session-1').size, 1)
+  assert.match(f.active.get('session-1').get('word-docx').content, /REPLACEMENT_CONTENT/)
+  await f.detective.toggle(selector, true, f.A)
+  assert.equal(f.active.get('session-1').size, 1)
+  assert.match(f.active.get('session-1').get('word-docx').content, /REPLACEMENT_CONTENT/)
+  assert.equal(f.active.get('session-1').get('word-docx').resourceBase.path, installed.path)
+})
+
+test('failed temporary overwrite persistence restores the old live content', async t => {
+  const f = await fixture(t)
+  const installed = await f.detective.install({ name: 'word-docx', scope: 'temp', workspace: f.A, sessionId: 'session-1' })
+  const before = f.active.get('session-1').get('word-docx').content
+  const save = f.detective.index.save.bind(f.detective.index)
+  let failed = false
+  f.detective.index.save = async () => { if (!failed) { failed = true; throw new Error('TEST_INDEX_WRITE_FAILED') } return save() }
+  const result = await f.detective.installPrepared({ name: 'word-docx', files: [{ path: 'SKILL.md', text: markdown('word-docx', 'REPLACEMENT_CONTENT') }], scope: 'temp', workspace: f.A, sessionId: 'session-1', conflict: 'overwrite', selector: installed, verdict: { verdict: 'safe', severity: 'low', summary: 'replacement' } })
+  assert.equal(result.ok, false)
+  assert.equal(f.active.get('session-1').size, 1)
+  assert.equal(f.active.get('session-1').get('word-docx').content, before)
+  assert.equal(f.detective.tempRegistrations.size, 1)
+})
+
+test('plugin unload cleans registrations and reload can restore and delete them', async t => {
+  const f = await fixture(t)
+  const installed = await f.detective.install({ name: 'word-docx', scope: 'temp', workspace: f.A, sessionId: 'session-1' })
+  await f.disposePlugin()
+  assert.equal(f.active.get('session-1').size, 0)
+  assert.equal(f.detective.tempRegistrations.size, 0)
+  assert.equal(existsSync(join(installed.path, 'SKILL.md')), true)
+  const restarted = f.service()
+  await restarted.restoreTempFor('session-1')
+  await restarted.restoreTempFor('session-1')
+  assert.equal(f.active.get('session-1').size, 1)
+  assert.equal(restarted.tempRegistrations.size, 1)
+  await restarted.remove({ ...installed, workspace: f.A, sessionId: 'session-1' }, f.A)
+  assert.equal(f.active.get('session-1').size, 0)
+})
+
+test('resumed agents restore only their enabled persisted temporary skills', async t => {
+  const f = await fixture(t)
+  const enabled = await f.detective.install({ name: 'word-docx', scope: 'temp', workspace: f.A, sessionId: 'session-1' })
+  const disabled = await f.detective.install({ name: 'excel-report', scope: 'temp', workspace: f.A, sessionId: 'session-1' })
+  await f.detective.toggle({ ...disabled, workspace: f.A, sessionId: 'session-1' }, false, f.A)
+  await f.detective.install({ name: 'pdf-toolkit', scope: 'temp', workspace: f.A, sessionId: 'session-2' })
+  await f.disposeAgent('session-1')
+  assert.equal(f.detective.tempRegistrations.has(enabled.instanceId), false)
+  f.addSession('session-1')
+  const restarted = f.service()
+  await restarted.restoreTempFor('session-1')
+  assert.deepEqual([...f.active.get('session-1').keys()], ['word-docx'])
+  assert.equal(restarted.tempRegistrations.size, 1)
+  await restarted.toggle({ ...enabled, workspace: f.A, sessionId: 'session-1' }, false, f.A)
+  assert.equal(f.active.get('session-1').size, 0)
 })

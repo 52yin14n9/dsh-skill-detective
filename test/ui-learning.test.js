@@ -10,6 +10,7 @@ function createClient(fetchImpl) {
   let hooks = null
   let client
   const timers = []
+  const intervals = []
   const React = {
     Fragment: 'fragment',
     createElement: (type, props, ...children) => ({ type, props: { ...props, children: children.flat(Infinity) } }),
@@ -52,7 +53,7 @@ function createClient(fetchImpl) {
     fetch: fetchImpl,
     setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length },
     clearTimeout: () => {},
-    setInterval: () => 1,
+    setInterval: fn => { intervals.push(fn); return intervals.length },
     clearInterval: () => {},
     document: { body: { dataset: {} } },
     window: {
@@ -65,7 +66,7 @@ function createClient(fetchImpl) {
   }
   vm.runInNewContext(clientSource, sandbox, { filename: 'client.js' })
   return {
-    client, timers,
+    client, timers, intervals,
     mount(Component, props) {
       const owner = { cursor: 0, cells: [], effects: [] }
       return {
@@ -361,4 +362,154 @@ test('document quality scores do not use popularity as task matching evidence', 
   assert.equal(host.evaluateSkill(entry).score, host.evaluateSkill({ ...entry, installs: 1_000_000 }).score)
   const { client } = createClient(async () => response({ ok: true }))
   assert.equal(client.zh.matchScore, '文档质量分')
+})
+
+
+test('recommendation dock accepts a second session recommendation after a completed install fades', async () => {
+  let pending = { sessionId: 'session-one', pending: { kind: 'recommend', need: 'catalog:first', label: 'first' } }
+  const installs = []
+  const app = createClient(async (url, options) => {
+    if (url.endsWith('/pending/latest')) return response({ ok: true, ...pending })
+    if (url.endsWith('/install')) installs.push(JSON.parse(options.body))
+    if (url.endsWith('/dismiss')) pending = { pending: null }
+    return response({ ok: true, name: 'installed' })
+  })
+  const dock = app.mount(app.client.DetectiveDock, { t })
+  dock.render()
+  await flush()
+  await button(dock.render(), 'find').props.onClick()
+  dock.render()
+  app.timers[0].fn()
+  app.timers[1].fn()
+  assert.equal(dock.render(), null)
+  pending = { sessionId: 'session-two', pending: { kind: 'recommend', need: 'catalog:second', label: 'second' } }
+  await app.intervals[0]()
+  assert.equal(dock.render().props.className, 'sd-dock', 'A new recommendation must not inherit the completed bubble fade')
+  await button(dock.render(), 'find').props.onClick()
+  assert.deepEqual(installs.map(item => [item.need, item.sessionId]), [['catalog:first', 'session-one'], ['catalog:second', 'session-two']])
+})
+
+test('moving a temporary skill to either persistent scope keeps its source session for lookup', () => {
+  const { client } = createClient(async () => response({ ok: true }))
+  const temporary = { ...skill('temp-instance'), scope: 'temp', sessionId: 'live-session' }
+  for (const scope of ['global', 'workspace']) {
+    const changes = client.scopeChanges([temporary], { 'temp-instance': { scope, workspaces: ['/work/a'] } }, '/work/a', 'live-session', t)
+    assert.equal(changes[0].sessionId, 'live-session')
+    assert.equal(changes[0].instanceId, 'temp-instance')
+  }
+})
+
+test('a partially committed scope save retries only the remaining move', async () => {
+  const requests = []
+  let failSecond = true
+  let refreshed = 0
+  const first = skill('first')
+  const second = { ...skill('second'), name: 'other', path: '/work/a/.dsh/skills/other' }
+  const app = createClient(async (url, options) => {
+    const body = JSON.parse(options.body)
+    if (url.endsWith('/scope')) {
+      requests.push(body.instanceId)
+      if (body.instanceId === 'second' && failSecond) return response({ ok: false, code: 'name-conflict', message: 'Target exists' })
+    }
+    return response({ ok: true })
+  })
+  const modal = app.mount(app.client.SettingsModal, { data: settings([first, second]), t, onClose() {}, onSaved() { refreshed += 1 } })
+  modal.render()
+  for (const select of elements(modal.render()).filter(node => node.type === 'select')) select.props.onChange({ target: { value: 'global' } })
+  await button(modal.render(), 'save').props.onClick()
+  assert.equal(refreshed, 1, 'Refresh committed server state after the partial failure')
+  failSecond = false
+  await button(modal.render(), 'save').props.onClick()
+  assert.deepEqual(requests, ['first', 'second', 'second'])
+})
+
+
+test('scope rows rebase committed identities after refresh and preserve the failed edit', async () => {
+  const requests = []
+  let failSecond = true
+  const first = skill('first')
+  const second = { ...skill('second'), name: 'other', path: '/work/a/.dsh/skills/other' }
+  const props = { data: settings([first, second]), t, onClose() {}, onSaved() {} }
+  const app = createClient(async (url, options) => {
+    const body = JSON.parse(options.body)
+    if (url.endsWith('/scope')) {
+      requests.push(body.instanceId)
+      if (body.instanceId === 'second' && failSecond) return response({ ok: false, code: 'name-conflict', message: 'Target exists' })
+    }
+    return response({ ok: true })
+  })
+  const modal = app.mount(app.client.SettingsModal, props)
+  modal.render()
+  for (const select of elements(modal.render()).filter(node => node.type === 'select')) select.props.onChange({ target: { value: 'global' } })
+  await button(modal.render(), 'save').props.onClick()
+  props.data = settings([{ ...first, instanceId: 'global-first', path: '/global/first', scope: 'global' }, second])
+  modal.render()
+  const selects = elements(modal.render()).filter(node => node.type === 'select')
+  assert.deepEqual(selects.map(node => node.props.value), ['global', 'global'])
+  failSecond = false
+  await button(modal.render(), 'save').props.onClick()
+  assert.deepEqual(requests, ['first', 'second', 'second'])
+})
+
+
+test('dock conflict confirmation and failed retry retain the exact target scope and identity', async () => {
+  const requests = []
+  const target = { name: 'fixture', instanceId: 'workspace-fixture', path: '/work/a/.dsh/skills/fixture', scope: 'workspace' }
+  const app = createClient(async (url, options) => {
+    if (url.endsWith('/pending/latest')) return response({ ok: true, sessionId: 'review-session', pending: { kind: 'recommend', need: 'catalog:fixture', label: 'Fixture', searchText: 'original search' } })
+    if (url.endsWith('/install')) {
+      requests.push(JSON.parse(options.body))
+      if (requests.length === 1) return response({ ok: false, code: 'name-conflict', conflict: target })
+      if (requests.length === 2) throw new TypeError('Network request failed')
+      return response({ ok: true, name: 'fixture' })
+    }
+    return response({ ok: true })
+  })
+  const dock = app.mount(app.client.DetectiveDock, { t })
+  dock.render()
+  await flush()
+  await button(dock.render(), 'find').props.onClick()
+  await button(dock.render(), 'overwriteInstall').props.onClick()
+  await button(dock.render(), 'retry').props.onClick()
+  const expected = { need: 'catalog:fixture', sessionId: 'review-session', text: 'original search', conflict: 'overwrite', name: target.name, instanceId: target.instanceId, path: target.path, scope: 'workspace' }
+  assert.deepEqual(requests[1], expected, 'The confirmed scope overrides a later defaultScope change')
+  assert.deepEqual(requests[2], expected, 'Network retry must keep the same confirmed target')
+})
+
+
+test('dock explicit dismissal suppresses only its displayed recommendation ID', async () => {
+  const acknowledgements = []
+  const app = createClient(async (url, options) => {
+    if (url.endsWith('/pending/latest')) return response({ ok: true, sessionId: 'session', pending: { id: 'displayed', kind: 'recommend', need: 'catalog:fixture', label: 'Fixture' } })
+    acknowledgements.push(JSON.parse(options.body))
+    return response({ ok: true })
+  })
+  const dock = app.mount(app.client.DetectiveDock, { t })
+  dock.render()
+  await flush()
+  await button(dock.render(), 'notNow').props.onClick()
+  assert.deepEqual(acknowledgements, [{ sessionId: 'session', recommendationId: 'displayed', suppress: true }])
+})
+
+test('dock success and covered acknowledgements clear their original IDs without suppression', async () => {
+  for (const kind of ['recommend', 'covered']) {
+    const acknowledgements = []
+    let finishInstall
+    const app = createClient(async (url, options) => {
+      if (url.endsWith('/pending/latest')) return response({ ok: true, sessionId: 'session', pending: { id: 'displayed', kind, need: 'catalog:fixture', label: 'Fixture', name: 'fixture' } })
+      if (url.endsWith('/install')) return new Promise(resolve => { finishInstall = resolve })
+      acknowledgements.push(JSON.parse(options.body))
+      return response({ ok: true })
+    })
+    const dock = app.mount(app.client.DetectiveDock, { t })
+    dock.render()
+    await flush()
+    if (kind === 'recommend') {
+      const install = button(dock.render(), 'find').props.onClick()
+      dock.render()
+      finishInstall(response({ ok: true, name: 'fixture' }))
+      await install
+    }
+    assert.deepEqual(acknowledgements, [{ sessionId: 'session', recommendationId: 'displayed', suppress: false }])
+  }
 })
