@@ -31,7 +31,8 @@
     "prompts/*.md",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "docs/*.md"
   ],
   "dsh": {
     "bundle": {
