@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, stat, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -127,7 +127,7 @@ test('review rejects incomplete model JSON without caching it', async () => {
   const subject = service(); let puts = 0
   subject.auditCache = { get: async () => null, put: async () => { puts++ } }
   subject.judge = { json: async () => ({ ok: true, data: {}, model: 'fixture' }) }
-  const result = await subject.reviewFiles([{ path: 'SKILL.md', text: markdown }])
+  const result = await subject.reviewFiles([{ path: 'SKILL.md', text: markdown }], { sessionId: 'live-fixture' })
   assert.equal(result.ok, false)
   assert.equal(puts, 0)
 })
@@ -156,7 +156,7 @@ test('one suspicious audit segment blocks the whole directory', async () => {
   const subject = service(); let calls = 0
   subject.auditCache = { get: async () => null, put: async () => {} }
   subject.judge = { json: async () => ({ ok: true, data: safe(calls++ === 1 ? { verdict: 'suspicious', severity: 'medium' } : {}), model: 'fixture' }) }
-  const result = await subject.reviewFiles([{ path: 'SKILL.md', text: 'a'.repeat(100_000) }])
+  const result = await subject.reviewFiles([{ path: 'SKILL.md', text: 'a'.repeat(100_000) }], { sessionId: 'live-fixture' })
   assert.equal(result.ok, true)
   assert.equal(result.poison, true)
   assert.equal(result.coverage.bytes, 100_000)
@@ -282,4 +282,39 @@ test('unchanged commit tree cache expires instead of living indefinitely', async
   for (const cached of REMOTE_REPOS.values()) cached.at = Date.now() - 6 * 60_000
   assert.equal((await subject.resolveRemote(fixture.id)).ok, true)
   assert.equal(fixture.treeCalls, 2)
+})
+
+
+test('reviews never borrow a recently active session, even for cached verdicts', async () => {
+  const subject = service()
+  let reads = 0, calls = 0
+  subject.auditCache = { get: async () => { reads++; return safe() }, put: async () => {} }
+  subject.judge = { json: async () => { calls++; return { ok: true, data: safe() } } }
+  const files = [{ path: 'SKILL.md', text: markdown }]
+  for (const meta of [{}, { sessionId: '' }, { sessionId: 'unknown-session' }]) {
+    const result = await subject.reviewFiles(files, meta)
+    assert.equal(result.ok, false)
+    assert.equal(result.error, 'session-unavailable')
+  }
+  assert.equal(reads, 0)
+  assert.equal(calls, 0)
+  assert.equal((await subject.reviewFiles(files, { sessionId: 'live-fixture' })).cached, true)
+})
+
+test('verified executable mode survives remote resolution and disk publication', async t => {
+  const fixture = remoteFixture(t, { 'skills/fixture/SKILL.md': markdown, 'skills/fixture/scripts/run.sh': '#!/bin/sh\nexit 0\n' }, {
+    mutateTree(entries) { entries.find(x => x.path.endsWith('run.sh')).mode = '100755' },
+  })
+  const subject = service(), resolved = await subject.resolveRemote(fixture.id)
+  assert.equal(resolved.ok, true, resolved.error)
+  assert.equal(resolved.files.find(x => x.path === 'scripts/run.sh').mode, '100755')
+  const dir = join(run, 'published-modes')
+  await subject.writeFiles(dir, resolved.files)
+  assert.equal(await readFile(join(dir, 'scripts/run.sh'), 'utf8'), '#!/bin/sh\nexit 0\n')
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(join(dir, 'scripts/run.sh'))).mode & 0o777, 0o755)
+    assert.equal((await stat(join(dir, 'SKILL.md'))).mode & 0o777, 0o644)
+  }
+  await assert.rejects(subject.writeFiles(dir, [{ path: 'invalid.sh', text: 'exit 0', mode: '104755' }]), { code: 'unsafe-mode' })
+  assert.notEqual(hashFiles([{ path: 'run.sh', text: 'exit 0', mode: '100755' }]), hashFiles([{ path: 'run.sh', text: 'exit 0', mode: '100644' }]))
 })

@@ -18,7 +18,7 @@
  * labels a candidate with the source that actually produced it.
  */
 import { existsSync, statSync } from 'node:fs'
-import { mkdir, readdir, readFile, writeFile, stat, rename, rm, cp } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile, chmod, stat, lstat, rename, rm, cp } from 'node:fs/promises'
 import { join, resolve, dirname, basename, relative, sep, isAbsolute } from 'node:path'
 import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
@@ -687,6 +687,8 @@ function hashFiles(files, prompt = '') {
   for (const file of [...files].sort((a, b) => String(a.path).localeCompare(String(b.path)))) {
     hash.update(String(file.path ?? ''))
     hash.update('\u0000')
+    hash.update(file.mode ?? '100644')
+    hash.update('\u0000')
     hash.update(String(file.text ?? ''))
     hash.update('\u0000')
   }
@@ -970,7 +972,7 @@ function planAuditChunks(files, budget = AUDIT_CHUNK_CHARS) {
     if (text === '') continue
     if (text.length <= budget) {
       if (used > 0 && used + text.length > budget) flush()
-      current.push({ path, text })
+      current.push({ path, text, ...(file.mode ? { mode: file.mode } : {}) })
       used += text.length
       continue
     }
@@ -980,6 +982,7 @@ function planAuditChunks(files, budget = AUDIT_CHUNK_CHARS) {
     for (let index = 0; index < total; index += 1) {
       chunks.push([{
         path: `${path}#part${index + 1}/${total}`,
+        ...(file.mode ? { mode: file.mode } : {}),
         text: text.slice(index * partSize, (index + 1) * partSize),
       }])
     }
@@ -1049,7 +1052,7 @@ function buildAuditInput(files, meta = {}) {
   for (const file of files) {
     const path = String(file.path ?? 'file')
     const text = String(file.text ?? '')
-    lines.push(`--- ${path} (${text.length} 字符) ---`, text, '')
+    lines.push(`--- ${path} (${text.length} 字符, mode=${file.mode ?? '100644'}) ---`, text, '')
   }
   return lines.join('\n')
 }
@@ -2004,6 +2007,24 @@ function scopeRank(scope) {
   return SCOPE_RANK[scope] ?? 4
 }
 
+/** Reject links in an operation's path, including linked parent directories.
+ * This protects ordinary on-disk operations; it is not a lock against another
+ * process replacing filesystem entries concurrently after the check.
+ */
+async function assertNoSymlinkPath(path) {
+  const chain = []
+  for (let current = resolve(path); ; current = dirname(current)) {
+    chain.push(current)
+    if (dirname(current) === current) break
+  }
+  for (const current of chain.reverse()) {
+    let entry
+    try { entry = await lstat(current) }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error }
+    if (entry.isSymbolicLink()) throw skillError('unsafe-symlink', '技能路径包含符号链接，拒绝穿透目录边界')
+  }
+}
+
 /** Read one `SKILL.md` and parse its frontmatter; `null` when it is unreadable. */
 async function readSkillFile(file) {
   let text
@@ -2067,6 +2088,10 @@ async function scanRoot(entry) {
   }
   for (const dir of skillDirs) {
     const file = join(dir, 'SKILL.md')
+    try { await assertNoSymlinkPath(file) } catch (error) {
+      if (error.code === 'unsafe-symlink') continue
+      throw error
+    }
     const read = await readSkillFile(file)
     if (read === null) continue
     const { meta, text } = read
@@ -2548,7 +2573,8 @@ class SkillDetective {
     let bytes = 0
     const names = new Set()
     for (const file of list) {
-      if (!file || !safeRepositoryPath(file.path) || typeof file.text !== 'string' || names.has(file.path)) {
+      if (!file || !safeRepositoryPath(file.path) || typeof file.text !== 'string' || names.has(file.path)
+        || (file.mode !== undefined && !['100644', '100755'].includes(file.mode))) {
         return { ok: false, error: '待审查文件清单不完整或路径不合法' }
       }
       names.add(file.path)
@@ -2559,8 +2585,9 @@ class SkillDetective {
       }
     }
     const hash = hashFiles(list, prompt)
-    const requestedSession = typeof meta.sessionId === 'string' && meta.sessionId !== '' ? meta.sessionId : this.activeSessionId()
-    const sessionId = this.validSessionId(requestedSession)
+    // Reviews must use the explicitly selected session, including cache hits.
+    // A recent message in another conversation must never select the payer/model.
+    const sessionId = this.validSessionId(meta.sessionId)
     if (!sessionId) return { ok: false, hash, error: 'session-unavailable' }
     const cached = await this.auditCache.get(hash)
     if (cached !== null) return { ok: true, ...cached, hash, cached: true }
@@ -3254,7 +3281,7 @@ class SkillDetective {
         if (size > MAX_SKILL_FILE_BYTES || actualBytes > MAX_SKILL_TOTAL_BYTES) {
           return { ok: false, error: '下载后的真实 UTF-8 内容超过审查字节上限' }
         }
-        files.push({ path: prefix === '' ? item.path : item.path.slice(prefix.length + 1), text: result.text })
+        files.push({ path: prefix === '' ? item.path : item.path.slice(prefix.length + 1), text: result.text, mode: item.mode })
       }
     }
     if (!/^---\r?\n[\s\S]*?\r?\n---/.test(files[0].text)) {
@@ -3295,8 +3322,24 @@ class SkillDetective {
     const backup = join(dirname(dir), `.skill-detective-backup-${token}`)
     let backedUp = false, published = false
     try {
+      await assertNoSymlinkPath(dir)
       await mkdir(dirname(dir), { recursive: true })
-      if (options.copyFrom) await cp(options.copyFrom, stage, { recursive: true })
+      if (options.copyFrom) {
+        await assertNoSymlinkPath(options.copyFrom)
+        for (const file of files) {
+          const source = resolve(options.copyFrom, file.path)
+          if (!within(options.copyFrom, source)) throw skillError('unsafe-path', '目标路径越界')
+          await assertNoSymlinkPath(source)
+        }
+        await cp(options.copyFrom, stage, { recursive: true, dereference: false })
+      }
+      // cp preserves links. Check every file to be overwritten in the copied
+      // tree so writeFiles cannot follow SKILL.md or a linked subdirectory.
+      for (const file of files) {
+        const target = resolve(stage, file.path)
+        if (!within(stage, target)) throw skillError('unsafe-path', '目标路径越界')
+        await assertNoSymlinkPath(target)
+      }
       await this.writeFiles(stage, files)
       if (existsSync(dir)) {
         if (!options.overwrite) throw skillError('name-conflict', '目标目录已存在，请先确认覆盖或改名')
@@ -3409,7 +3452,10 @@ class SkillDetective {
       const target = join(dir, file.path)
       if (!within(dir, target)) throw new Error('拒绝写入越界路径')
       await mkdir(dirname(target), { recursive: true })
+      if (file.mode !== undefined && !['100644', '100755'].includes(file.mode)) throw skillError('unsafe-mode', '拒绝不支持的文件权限')
       await writeFile(target, file.text, 'utf8')
+      // chmod is required even when a staging copy already contains this path.
+      if (file.mode !== undefined) await chmod(target, file.mode === '100755' ? 0o755 : 0o644)
     }
   }
 
@@ -3553,6 +3599,7 @@ class SkillDetective {
       const warnings = []
       const current = await this.selectInstalled(selector, workspace, { sessionId })
       if (current.managed === false || !current.path) throw skillError('readonly', '插件自带的技能不可移动作用域')
+      await assertNoSymlinkPath(join(current.path, 'SKILL.md'))
       if (!['global', 'workspace', 'temp'].includes(targetScope)) throw skillError('bad-scope', '未知作用域')
       if (targetScope === 'temp' && !this.validSessionId(sessionId)) throw skillError('session-unavailable', '临时技能需要一个有效的当前会话')
       const ws = this.normalizeWorkspace(workspace || '')
@@ -3561,6 +3608,7 @@ class SkillDetective {
       const destinations = roots.map((root, i) => ({ root, path: join(root, current.name), workspace: targetScope === 'workspace' ? resolve(owners[i]) : null }))
       for (const dest of destinations) {
         if (!within(dest.root, dest.path)) throw skillError('unsafe-path', '目标路径越界')
+        await assertNoSymlinkPath(dest.path)
         if (identityPath(dest.path) !== identityPath(current.path) && existsSync(dest.path)) throw skillError('name-conflict', '目标目录已有同名技能，未执行移动')
       }
       if (destinations.length === 1 && identityPath(destinations[0].path) === identityPath(current.path) && targetScope === current.scope) {
@@ -3631,6 +3679,7 @@ class SkillDetective {
       const warnings = []
       const target = await this.selectInstalled(selector, workspace, options)
       if (target.managed === false || !target.path) throw skillError('readonly', '插件自带的技能不可修改')
+      await assertNoSymlinkPath(join(target.path, 'SKILL.md'))
       const text = await readFile(join(target.path, 'SKILL.md'), 'utf8')
       const next = setFrontmatterBoolean(text, 'disable-model-invocation', !enabled)
       const sessionId = typeof selector === 'object' ? selector.sessionId || options.sessionId || '' : options.sessionId || ''
@@ -3664,6 +3713,7 @@ class SkillDetective {
       const warnings = []
       const target = await this.selectInstalled(selector, workspace, options)
       if (target.managed === false || !target.path) throw skillError('readonly', '插件自带的技能不可删除，请在插件管理器里处理')
+      await assertNoSymlinkPath(target.path)
       const state = await this.state.load(), index = await this.index.load()
       const oldInstalls = structuredClone(state.installs), oldDeleted = structuredClone(state.deleted), oldIndex = structuredClone(index.skills)
       const backup = join(dirname(target.path), `.skill-detective-remove-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`)
@@ -4407,6 +4457,8 @@ export function apply(ctx) {
             'invalid-selector': 400,
             'invalid-workspace': 400,
             'unsafe-path': 400,
+            'unsafe-symlink': 400,
+            'unsafe-mode': 400,
             'bad-scope': 400,
             'missing-skill': 400,
             'stale-instance': 409,
